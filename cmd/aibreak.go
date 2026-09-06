@@ -41,7 +41,17 @@ var rootCmd = &cobra.Command{
 			return err
 		}
 
+		synthPrompt, err := persona.LoadSynthesizer(dir)
+		if err != nil {
+			return err
+		}
+
 		results := engine.BreakAll(context.Background(), caller, idea, persons)
+
+		synthesis, err := engine.Synthesize(context.Background(), caller, synthPrompt, idea, results)
+		if err != nil {
+			return err
+		}
 
 		personas := make([]map[string]any, len(results))
 		for i, r := range results {
@@ -58,7 +68,11 @@ var rootCmd = &cobra.Command{
 		result := map[string]any{
 			"idea":     idea,
 			"personas": personas,
-			"status":   "placeholder",
+			"synthesis": map[string]any{
+				"feedback": synthesis.Feedback,
+				"score":    synthesis.Score,
+			},
+			"status": "complete",
 		}
 
 		data, err := json.MarshalIndent(result, "", "  ")
