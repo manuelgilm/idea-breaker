@@ -56,8 +56,12 @@ var rootCmd = &cobra.Command{
 		personas := make([]map[string]any, len(results))
 		for i, r := range results {
 			p := map[string]any{
-				"name":     r.Persona.Name,
-				"response": r.Response,
+				"name":         r.Persona.Name,
+				"summary":      r.Breakdown.Summary,
+				"key_points":   r.Breakdown.KeyPoints,
+				"risks":        r.Breakdown.Risks,
+				"dependencies": r.Breakdown.Dependencies,
+				"score":        r.Breakdown.Score,
 			}
 			if r.Err != nil {
 				p["error"] = r.Err.Error()
