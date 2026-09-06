@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/manuelgilm/idea-breaker/engine"
+	"github.com/manuelgilm/idea-breaker/persona"
 	"github.com/spf13/cobra"
 )
 
@@ -16,20 +17,31 @@ var rootCmd = &cobra.Command{
 	Long:  `A CLI tool that breaks down an idea using AI personas (pessimist, optimist, architect, etc.) and synthesizes a scored review.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		idea, _ := cmd.Flags().GetString("idea")
-		apiKey, _ := cmd.Flags().GetString("api-key")
 		output, _ := cmd.Flags().GetString("output")
 
 		if idea == "" {
 			return fmt.Errorf("--idea is required")
 		}
+		apiKey := os.Getenv("OPENAI_API_KEY")
 		if apiKey == "" {
-			apiKey = "sk-placeholder"
+			return fmt.Errorf("OPENAI_API_KEY is not set")
 		}
 		if output == "" {
 			return fmt.Errorf("--output is required")
 		}
 
-		results := engine.BreakAll(context.Background(), engine.StubCaller{}, idea, apiKey, engine.BuiltInPersonas())
+		caller := engine.NewHTTPCaller(apiKey, "", "")
+
+		dir := os.Getenv("AIBREAK_PERSONAS_DIR")
+		if dir == "" {
+			dir = persona.DefaultDir
+		}
+		persons, err := persona.FileSource{Dir: dir}.Load()
+		if err != nil {
+			return err
+		}
+
+		results := engine.BreakAll(context.Background(), caller, idea, persons)
 
 		personas := make([]map[string]any, len(results))
 		for i, r := range results {
@@ -45,7 +57,6 @@ var rootCmd = &cobra.Command{
 
 		result := map[string]any{
 			"idea":     idea,
-			"api_key":  apiKey,
 			"personas": personas,
 			"status":   "placeholder",
 		}
@@ -73,6 +84,5 @@ func Execute() {
 
 func init() {
 	rootCmd.Flags().String("idea", "", "The idea to break down")
-	rootCmd.Flags().String("api-key", "", "API key for the LLM provider (placeholder used if omitted)")
 	rootCmd.Flags().String("output", "", "Path to the output JSON file")
 }
