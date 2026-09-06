@@ -4,20 +4,30 @@
 
 Give it an idea, and it fans the idea out to several personas in parallel, each with its own perspective. It then collects their structured takeaways and has a synthesizer produce an overall verdict with a feasibility score. The result is written to a JSON file.
 
-## Prerequisites
+## Download a prebuilt binary
 
-- Go 1.26 or newer
-- An API key for an OpenAI-compatible LLM provider (OpenAI by default)
+Prebuilt binaries are published as GitHub Releases — no Go needed. Pick the one matching your OS and architecture, extract it, and run `aibreak`. The personas are embedded in the binary, so it's fully self-contained.
 
-## Install
+| OS / architecture | Archive |
+| ----------------- | ------- |
+| Linux (amd64)     | `aibreak_<version>_linux_amd64.tar.gz` |
+| Linux (arm64)     | `aibreak_<version>_linux_arm64.tar.gz` |
+| macOS (amd64)     | `aibreak_<version>_darwin_amd64.tar.gz` |
+| macOS (arm64)     | `aibreak_<version>_darwin_arm64.tar.gz` |
+| Windows (amd64)   | `aibreak_<version>_windows_amd64.zip` |
+| Windows (arm64)   | `aibreak_<version>_windows_arm64.zip` |
 
-Build the binary from source:
+Whoever is releasing creates a tag (e.g. `v1.0.0`); the GitHub Actions workflow builds all targets and publishes them.
+
+## Build from source (developers)
+
+Requires Go 1.26 or newer:
 
 ```bash
 go build -o bin/aibreak ./cmd/aibreak
 ```
 
-Or install it into your Go `bin` directory and run `aibreak` from anywhere:
+Or install it into your Go `bin` directory:
 
 ```bash
 go install ./cmd/aibreak
@@ -28,12 +38,12 @@ aibreak --help
 
 The tool reads its configuration from environment variables.
 
-| Variable               | Required | Default            | Purpose                                      |
-| ---------------------- | -------- | ------------------ | -------------------------------------------- |
-| `OPENAI_API_KEY`       | yes      | —                  | Provider API key. Missing → error (no flag). |
-| `AIBREAK_PERSONAS_DIR` | no       | `configs/personas` | Directory containing the persona YAML files. |
+| Variable               | Required | Default | Purpose                                      |
+| ---------------------- | -------- | ------- | -------------------------------------------- |
+| `OPENAI_API_KEY`       | yes      | —       | Provider API key. Missing → error (no flag). |
+| `AIBREAK_PERSONAS_DIR` | no       | —       | Override the embedded personas with your own YAML dir. |
 
-There is no `--api-key` flag; credentials come only from the environment.
+There is no `--api-key` flag; credentials come only from the environment. By default the personas are embedded in the binary; set `AIBREAK_PERSONAS_DIR` to load your own YAML files from disk instead.
 
 ## Run
 
@@ -94,7 +104,7 @@ Each persona reports `summary`, `key_points`, `risks`, `dependencies`, and a `sc
 
 ## Adjusting the personas
 
-Personas are plain YAML files, one per persona, in `configs/personas/` (or your `AIBREAK_PERSONAS_DIR`). Each has a `name` and a `prompt`:
+Personas are YAML files, one per persona. The built-in ones (`pessimist`, `optimist`, `architect`) plus the synthesizer prompt are **embedded into the binary**. To use customized prompts, point `AIBREAK_PERSONAS_DIR` at a directory you provide — the binary reads one YAML file per persona from it (no need to rebuild):
 
 ```yaml
 name: pessimist
@@ -105,9 +115,7 @@ prompt: |
   {"summary": "...", "key_points": ["..."], "risks": ["..."], "dependencies": ["..."], "score": <0-100>}
 ```
 
-Add a persona by dropping a new file into that directory — no code changes needed. Each persona prompt must instruct the model to reply with a single JSON object of the form `{summary, key_points, risks, dependencies, score}`.
-
-The file `synthesizer.yaml` in that directory is reserved for the synthesizer prompt, which aggregates all persona results into the scored review — it is not a persona.
+Each persona prompt must instruct the model to reply with a single JSON object of the form `{summary, key_points, risks, dependencies, score}`. The file `synthesizer.yaml` in that directory is reserved for the synthesizer prompt, which aggregates all persona results into the scored review — it is not a persona.
 
 ## How it works
 
@@ -116,6 +124,12 @@ The file `synthesizer.yaml` in that directory is reserved for the synthesizer pr
 3. Those takeaways are combined and fed to the synthesizer, which returns `{feedback, score}`.
 4. The whole result is written to the `--output` path.
 
-## Note on testing with a placeholder key
+## Trying it without a key
 
-Using the placeholder `OPENAI_API_KEY=sk-test` verifies the plumbing but hits the real provider and returns `401`. Per-persona `401`s appear in the `error` field and do not stop the run; a `401` during synthesis is a hard failure (exit 1), because the scored review is the deliverable. A real key returns real responses.
+Use `--mock` to run the full pipeline offline — no `OPENAI_API_KEY` needed. Personas and the synthesizer return deterministic mock responses, and the run always exits 0 with valid JSON:
+
+```bash
+./bin/aibreak --mock --idea "a startup that delivers groceries by drone" --output /tmp/result.json
+```
+
+A real run requires `OPENAI_API_KEY`. The placeholder `sk-test` reaches the real provider and returns `401`: per-persona `401`s appear in the `error` field and do not stop the run, but a `401` during synthesis is a hard failure (exit 1) because the scored review is the deliverable.
