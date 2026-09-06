@@ -14,12 +14,12 @@ const (
 	defaultModel   = "gpt-4o-mini"
 )
 
-// Caller makes a single API call for one persona.
-// The engine depends on this interface so it can be tested with a stub.
-// It is intentionally free of any auth concern; credentials are bound to the
-// concrete caller at construction time.
+// Caller makes a single LLM chat call from a system prompt and a user message.
+// It is intentionally free of any auth, persona, or domain concern: credentials
+// are bound to the concrete caller at construction time, and both the persona
+// fan-out (BreakAll) and the synthesizer (Synthesize) build their own messages.
 type Caller interface {
-	Break(ctx context.Context, p Persona, idea string) (string, error)
+	Chat(ctx context.Context, system, user string) (string, error)
 }
 
 // HTTPCaller makes real LLM HTTP calls to an OpenAI-compatible endpoint.
@@ -63,14 +63,14 @@ type chatResponse struct {
 	} `json:"choices"`
 }
 
-// Break sends the persona system prompt and the idea to the provider and
-// returns the model's text content.
-func (c HTTPCaller) Break(ctx context.Context, p Persona, idea string) (string, error) {
+// Chat sends the system prompt and user message to the provider and returns
+// the model's text content.
+func (c HTTPCaller) Chat(ctx context.Context, system, user string) (string, error) {
 	body := chatRequest{
 		Model: c.Model,
 		Messages: []chatMessage{
-			{Role: "system", Content: p.SystemPrompt},
-			{Role: "user", Content: idea},
+			{Role: "system", Content: system},
+			{Role: "user", Content: user},
 		},
 	}
 

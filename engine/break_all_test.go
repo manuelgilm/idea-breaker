@@ -12,7 +12,7 @@ type stubCaller struct {
 	err error
 }
 
-func (s stubCaller) Break(ctx context.Context, p Persona, idea string) (string, error) {
+func (s stubCaller) Chat(ctx context.Context, system, user string) (string, error) {
 	select {
 	case <-ctx.Done():
 		return "", ctx.Err()
@@ -20,7 +20,7 @@ func (s stubCaller) Break(ctx context.Context, p Persona, idea string) (string, 
 		if s.err != nil {
 			return "", s.err
 		}
-		return "response for " + p.Name, nil
+		return "response for " + user, nil
 	}
 }
 
@@ -46,7 +46,7 @@ func TestBreakAllOrdered(t *testing.T) {
 		if r.Err != nil {
 			t.Errorf("result %d: unexpected error %v", i, r.Err)
 		}
-		if r.Response != "response for "+personas[i].Name {
+		if r.Response != "response for idea" {
 			t.Errorf("result %d: unexpected response %q", i, r.Response)
 		}
 	}

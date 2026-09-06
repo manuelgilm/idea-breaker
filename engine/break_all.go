@@ -16,7 +16,7 @@ func BreakAll(ctx context.Context, caller Caller, idea string, personas []Person
 		wg.Add(1)
 		go func(i int, p Persona) {
 			defer wg.Done()
-			resp, err := caller.Break(ctx, p, idea)
+			resp, err := caller.Chat(ctx, p.SystemPrompt, idea)
 			results[i] = Result{Persona: p, Response: resp, Err: err}
 		}(i, p)
 	}

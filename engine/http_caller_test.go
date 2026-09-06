@@ -41,7 +41,7 @@ func TestHTTPCallerSuccess(t *testing.T) {
 	defer srv.Close()
 
 	caller := NewHTTPCaller("sk-test", srv.URL, "")
-	got, err := caller.Break(context.Background(), Persona{Name: "pessimist", SystemPrompt: "be negative"}, "my idea")
+	got, err := caller.Chat(context.Background(), "be negative", "my idea")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -58,7 +58,7 @@ func TestHTTPCallerNon200(t *testing.T) {
 	defer srv.Close()
 
 	caller := NewHTTPCaller("sk-test", srv.URL, "")
-	_, err := caller.Break(context.Background(), Persona{Name: "pessimist", SystemPrompt: "be negative"}, "my idea")
+	_, err := caller.Chat(context.Background(), "be negative", "my idea")
 	if err == nil {
 		t.Fatal("expected error for non-200 response")
 	}
