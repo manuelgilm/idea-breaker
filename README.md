@@ -6,18 +6,56 @@ Give it an idea, and it fans the idea out to several personas in parallel, each 
 
 ## Download a prebuilt binary
 
-Prebuilt binaries are published as GitHub Releases — no Go needed. Pick the one matching your OS and architecture, extract it, and run `aibreak`. The personas are embedded in the binary, so it's fully self-contained.
+Prebuilt binaries are published as GitHub Releases — no Go needed. The personas are embedded in the binary, so it's fully self-contained. Download the archive matching your OS and architecture, extract it, and run `aibreak`.
 
-| OS / architecture | Archive |
-| ----------------- | ------- |
-| Linux (amd64)     | `aibreak_<version>_linux_amd64.tar.gz` |
-| Linux (arm64)     | `aibreak_<version>_linux_arm64.tar.gz` |
-| macOS (amd64)     | `aibreak_<version>_darwin_amd64.tar.gz` |
-| macOS (arm64)     | `aibreak_<version>_darwin_arm64.tar.gz` |
-| Windows (amd64)   | `aibreak_<version>_windows_amd64.zip` |
-| Windows (arm64)   | `aibreak_<version>_windows_arm64.zip` |
+### Finding a release
 
-Whoever is releasing creates a tag (e.g. `v1.0.0`); the GitHub Actions workflow builds all targets and publishes them.
+Releases are published on GitHub:
+
+- Repo releases: `https://github.com/manuelgilm/idea-breaker/releases`
+- Latest release: `https://github.com/manuelgilm/idea-breaker/releases/latest`
+
+Or, with the GitHub CLI installed, download from the command line:
+
+```bash
+gh release download v1.0.0 -D aibreak-download
+```
+
+### Install
+
+Pick the asset that matches your OS and architecture:
+
+| OS / architecture | Asset |
+| ----------------- | ----- |
+| Linux (amd64) | `aibreak_<version>_linux_amd64.tar.gz` |
+| Linux (arm64) | `aibreak_<version>_linux_arm64.tar.gz` |
+| macOS (Intel) | `aibreak_<version>_darwin_amd64.tar.gz` |
+| macOS (Apple Silicon) | `aibreak_<version>_darwin_arm64.tar.gz` |
+| Windows (amd64) | `aibreak_<version>_windows_amd64.zip` |
+| Windows (arm64) | `aibreak_<version>_windows_arm64.zip` |
+
+**Linux / macOS** (`.tar.gz`):
+
+```bash
+tar -xzf aibreak_<version>_linux_amd64.tar.gz
+./aibreak --help
+
+# optional: put it on your PATH so `aibreak` runs from anywhere
+sudo mv aibreak /usr/local/bin/
+```
+
+**Windows** (`.zip`):
+
+```powershell
+Expand-Archive aibreak_<version>_windows_amd64.zip
+.\aibreak.exe --help
+```
+
+(Or extract the archive in Explorer; the executable has a `.exe` suffix.)
+
+### For maintainers: creating a release
+
+A maintenance release is cut by pushing a `v*` tag — the `release.yml` workflow builds all targets and publishes them. Everything a maintainer needs:
 
 ```bash
 git tag v1.0.0
