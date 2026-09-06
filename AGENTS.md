@@ -46,7 +46,7 @@ Note: the smoke test uses `--mock`, which runs the full pipeline offline against
 - Persona prompts and the synthesizer prompt instruct the model to reply with a single JSON object (no code fences/prose); the engine tolerates fences/preamble via `extractJSON`. Personas produce `{summary, key_points, risks, dependencies, score}`.
 - Output is indented JSON written to the `--output` path: `{idea, personas: [{name, summary, key_points, risks, dependencies, score, error?}], synthesis{feedback, score}, status}`. It does not include the API key.
 - CI: `.github/workflows/ci.yml` runs `go test ./... -race` + `go vet ./...` on `master` pushes and PRs.
-- Releasing: `.goreleaser.yml` + `.github/workflows/release.yml` build cross-platform self-contained binaries on a `v*` tag. Local dry-run: `goreleaser release --snapshot --skip=publish`. GoReleaser is not vendored; install with `go install github.com/goreleaser/goreleaser/v2@latest`.
+- Releasing: `.goreleaser.yml` + `.github/workflows/release.yml` build cross-platform self-contained binaries on a `v*` tag (triggered by `git tag vX.Y.Z && git push origin vX.Y.Z`). Local dry-run: `goreleaser release --snapshot --skip=publish`. GoReleaser is not vendored; install with `go install github.com/goreleaser/goreleaser/v2@latest`.
 
 ## Architecture: reusable engine
 
