@@ -21,7 +21,12 @@ type FileSource struct {
 	Dir string
 }
 
-// Load reads every *.yaml file in Dir and returns the personas in filename order.
+// synthFilename is the reserved persona-dir file holding the synthesizer prompt.
+// It is excluded from Load so it is never treated as a persona.
+const synthFilename = "synthesizer.yaml"
+
+// Load reads every *.yaml file in Dir (except synthesizer.yaml) and returns the
+// personas in filename order.
 func (s FileSource) Load() ([]engine.Persona, error) {
 	entries, err := os.ReadDir(s.Dir)
 	if err != nil {
@@ -31,6 +36,9 @@ func (s FileSource) Load() ([]engine.Persona, error) {
 	var paths []string
 	for _, e := range entries {
 		if e.IsDir() {
+			continue
+		}
+		if e.Name() == synthFilename {
 			continue
 		}
 		if ext := filepath.Ext(e.Name()); ext == ".yaml" || ext == ".yml" {
@@ -48,6 +56,15 @@ func (s FileSource) Load() ([]engine.Persona, error) {
 		personas = append(personas, p)
 	}
 	return personas, nil
+}
+
+// LoadSynthesizer reads the synthesizer prompt from {dir}/synthesizer.yaml.
+func LoadSynthesizer(dir string) (string, error) {
+	p, err := loadFile(filepath.Join(dir, synthFilename))
+	if err != nil {
+		return "", err
+	}
+	return p.SystemPrompt, nil
 }
 
 func loadFile(path string) (engine.Persona, error) {
