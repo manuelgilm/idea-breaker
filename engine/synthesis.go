@@ -26,7 +26,7 @@ func Synthesize(ctx context.Context, caller Caller, synthPrompt, idea string, re
 		Feedback string `json:"feedback"`
 		Score    int    `json:"score"`
 	}
-	if err := json.Unmarshal([]byte(raw), &out); err != nil {
+	if err := json.Unmarshal([]byte(extractJSON(raw)), &out); err != nil {
 		return Synthesis{}, fmt.Errorf("parse synthesis response %q: %w", raw, err)
 	}
 	if out.Score < 0 {
@@ -46,14 +46,23 @@ func buildSynthUser(idea string, results []Result) string {
 	for _, r := range results {
 		b.WriteString("- ")
 		b.WriteString(r.Persona.Name)
-		b.WriteString(": ")
 		if r.Err != nil {
-			b.WriteString("[error] ")
+			b.WriteString(": [error] ")
 			b.WriteString(r.Err.Error())
-		} else {
-			b.WriteString(r.Response)
+			b.WriteString("\n")
+			continue
 		}
-		b.WriteString("\n")
+		bd := r.Breakdown
+		b.WriteString(": ")
+		b.WriteString(bd.Summary)
+		b.WriteString("\n  key points: ")
+		b.WriteString(strings.Join(bd.KeyPoints, "; "))
+		b.WriteString("\n  risks: ")
+		b.WriteString(strings.Join(bd.Risks, "; "))
+		b.WriteString("\n  dependencies: ")
+		b.WriteString(strings.Join(bd.Dependencies, "; "))
+		b.WriteString("\n  score: ")
+		fmt.Fprintf(&b, "%d\n", bd.Score)
 	}
 	return b.String()
 }

@@ -1,0 +1,6 @@
+name: synthesizer
+prompt: |
+  You are a facilitator. Review the idea and every persona perspective below,
+  then synthesize a single verdict. Respond with JSON of the form
+  {"feedback": "<your overall review>", "score": <integer from 0 to 100>},
+  where 100 is the best possible idea and 0 is hopeless.

@@ -6,9 +6,9 @@ type Persona struct {
 	SystemPrompt string
 }
 
-// Result captures a single persona's output (or its error).
+// Result captures a single persona's structured output (or its error).
 type Result struct {
-	Persona  Persona
-	Response string
-	Err      error
+	Persona   Persona
+	Breakdown Breakdown
+	Err       error
 }

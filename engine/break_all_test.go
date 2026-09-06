@@ -6,10 +6,13 @@ import (
 	"testing"
 )
 
-// stubCaller is a test double: it returns a predictable response per persona
-// and can be configured to fail.
+const stubBreakdown = `{"summary":"verdict","key_points":["kp"],"risks":["risk"],"dependencies":["dep"],"score":50}`
+
+// stubCaller is a test double: it returns a predictable JSON breakdown and can
+// be configured to fail at the transport level.
 type stubCaller struct {
-	err error
+	err  error
+	text string
 }
 
 func (s stubCaller) Chat(ctx context.Context, system, user string) (string, error) {
@@ -20,7 +23,7 @@ func (s stubCaller) Chat(ctx context.Context, system, user string) (string, erro
 		if s.err != nil {
 			return "", s.err
 		}
-		return "response for " + user, nil
+		return s.text, nil
 	}
 }
 
@@ -34,7 +37,7 @@ func TestBreakAllOrdered(t *testing.T) {
 		{Name: "architect"},
 	}
 
-	results := BreakAll(ctx, stubCaller{}, "idea", personas)
+	results := BreakAll(ctx, stubCaller{text: stubBreakdown}, "idea", personas)
 
 	if len(results) != len(personas) {
 		t.Fatalf("expected %d results, got %d", len(personas), len(results))
@@ -46,8 +49,11 @@ func TestBreakAllOrdered(t *testing.T) {
 		if r.Err != nil {
 			t.Errorf("result %d: unexpected error %v", i, r.Err)
 		}
-		if r.Response != "response for idea" {
-			t.Errorf("result %d: unexpected response %q", i, r.Response)
+		if r.Breakdown.Summary != "verdict" {
+			t.Errorf("result %d: unexpected summary %q", i, r.Breakdown.Summary)
+		}
+		if r.Breakdown.Score != 50 {
+			t.Errorf("result %d: unexpected score %d", i, r.Breakdown.Score)
 		}
 	}
 }
@@ -73,5 +79,19 @@ func TestBreakAllCollectsErrors(t *testing.T) {
 		if !errors.Is(r.Err, boom) {
 			t.Errorf("result %d: expected error %v, got %v", i, boom, r.Err)
 		}
+	}
+}
+
+func TestBreakAllUnparseable(t *testing.T) {
+	ctx := context.Background()
+	personas := []Persona{{Name: "pessimist"}}
+
+	results := BreakAll(ctx, stubCaller{text: "not json"}, "idea", personas)
+
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result, got %d", len(results))
+	}
+	if results[0].Err == nil {
+		t.Fatal("expected parse error for non-JSON response")
 	}
 }

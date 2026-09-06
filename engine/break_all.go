@@ -17,7 +17,16 @@ func BreakAll(ctx context.Context, caller Caller, idea string, personas []Person
 		go func(i int, p Persona) {
 			defer wg.Done()
 			resp, err := caller.Chat(ctx, p.SystemPrompt, idea)
-			results[i] = Result{Persona: p, Response: resp, Err: err}
+			res := Result{Persona: p, Err: err}
+			if err == nil {
+				bd, parseErr := parseBreakdown(resp)
+				if parseErr != nil {
+					res.Err = parseErr
+				} else {
+					res.Breakdown = bd
+				}
+			}
+			results[i] = res
 		}(i, p)
 	}
 	wg.Wait()
