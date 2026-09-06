@@ -19,6 +19,13 @@ Prebuilt binaries are published as GitHub Releases — no Go needed. Pick the on
 
 Whoever is releasing creates a tag (e.g. `v1.0.0`); the GitHub Actions workflow builds all targets and publishes them.
 
+```bash
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+A push of a `v*` tag triggers the release workflow; a push to `master` without a tag only triggers CI (tests + vet).
+
 ## Build from source (developers)
 
 Requires Go 1.26 or newer:
