@@ -18,32 +18,45 @@ var rootCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		idea, _ := cmd.Flags().GetString("idea")
 		output, _ := cmd.Flags().GetString("output")
+		mock, _ := cmd.Flags().GetBool("mock")
 
 		if idea == "" {
 			return fmt.Errorf("--idea is required")
-		}
-		apiKey := os.Getenv("OPENAI_API_KEY")
-		if apiKey == "" {
-			return fmt.Errorf("OPENAI_API_KEY is not set")
 		}
 		if output == "" {
 			return fmt.Errorf("--output is required")
 		}
 
-		caller := engine.NewHTTPCaller(apiKey, "", "")
-
-		dir := os.Getenv("AIBREAK_PERSONAS_DIR")
-		if dir == "" {
-			dir = persona.DefaultDir
-		}
-		persons, err := persona.FileSource{Dir: dir}.Load()
-		if err != nil {
-			return err
+		var caller engine.Caller = engine.MockCaller{}
+		if !mock {
+			apiKey := os.Getenv("OPENAI_API_KEY")
+			if apiKey == "" {
+				return fmt.Errorf("OPENAI_API_KEY is not set")
+			}
+			caller = engine.NewHTTPCaller(apiKey, "", "")
 		}
 
-		synthPrompt, err := persona.LoadSynthesizer(dir)
-		if err != nil {
-			return err
+		var persons []engine.Persona
+		var err error
+		var synthPrompt string
+		if dir := os.Getenv("AIBREAK_PERSONAS_DIR"); dir != "" {
+			persons, err = persona.FileSource{Dir: dir}.Load()
+			if err != nil {
+				return err
+			}
+			synthPrompt, err = persona.LoadSynthesizer(dir)
+			if err != nil {
+				return err
+			}
+		} else {
+			persons, err = persona.EmbeddedSource{}.Load()
+			if err != nil {
+				return err
+			}
+			synthPrompt, err = persona.LoadEmbeddedSynthesizer()
+			if err != nil {
+				return err
+			}
 		}
 
 		results := engine.BreakAll(context.Background(), caller, idea, persons)
@@ -103,4 +116,5 @@ func Execute() {
 func init() {
 	rootCmd.Flags().String("idea", "", "The idea to break down")
 	rootCmd.Flags().String("output", "", "Path to the output JSON file")
+	rootCmd.Flags().Bool("mock", false, "Run offline with mock persona and synthesizer responses (no API key needed)")
 }
