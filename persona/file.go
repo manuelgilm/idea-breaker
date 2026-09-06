@@ -21,10 +21,6 @@ type FileSource struct {
 	Dir string
 }
 
-// synthFilename is the reserved persona-dir file holding the synthesizer prompt.
-// It is excluded from Load so it is never treated as a persona.
-const synthFilename = "synthesizer.yaml"
-
 // Load reads every *.yaml file in Dir (except synthesizer.yaml) and returns the
 // personas in filename order.
 func (s FileSource) Load() ([]engine.Persona, error) {
@@ -72,16 +68,19 @@ func loadFile(path string) (engine.Persona, error) {
 	if err != nil {
 		return engine.Persona{}, fmt.Errorf("read %q: %w", path, err)
 	}
+	return parsePersona(data, path)
+}
 
+func parsePersona(data []byte, source string) (engine.Persona, error) {
 	var fp filePersona
 	if err := yaml.Unmarshal(data, &fp); err != nil {
-		return engine.Persona{}, fmt.Errorf("parse %q: %w", path, err)
+		return engine.Persona{}, fmt.Errorf("parse %q: %w", source, err)
 	}
 	if fp.Name == "" {
-		return engine.Persona{}, fmt.Errorf("persona file %q has no name", path)
+		return engine.Persona{}, fmt.Errorf("persona file %q has no name", source)
 	}
 	if fp.Prompt == "" {
-		return engine.Persona{}, fmt.Errorf("persona file %q has no prompt", path)
+		return engine.Persona{}, fmt.Errorf("persona file %q has no prompt", source)
 	}
 	return engine.Persona{Name: fp.Name, SystemPrompt: fp.Prompt}, nil
 }
