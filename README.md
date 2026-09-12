@@ -11,11 +11,35 @@ Specs (source of truth):
 
 ## Requirements
 
-- Go 1.22+
+- Go 1.22+ (only to build from source; not needed for prebuilt binaries)
 - An OpenAI API key (`OPENAI_API_KEY`) to run `evaluate`
 - `golangci-lint` (optional, for `make lint`)
 
-## Build
+## Install (prebuilt binaries)
+
+Download the archive for your platform from
+[GitHub Releases](https://github.com/manuelgilm/idea-breaker/releases).
+Each archive (`aibreak-<version>-<os>-<arch>.tar.gz`, `.zip` on Windows)
+contains both binaries: `aibreak` and `aibreakd`.
+
+```sh
+# Linux / macOS example (replace <version> and pick your platform)
+tar xzf aibreak-<version>-linux-amd64.tar.gz
+sudo install -m 755 aibreak aibreakd /usr/local/bin/
+
+# verify
+aibreak --help
+```
+
+On Windows, unzip the archive and add the folder to your `PATH`.
+
+Optionally verify integrity against `checksums.txt` from the same release:
+
+```sh
+sha256sum -c checksums.txt --ignore-missing
+```
+
+## Build (from source)
 
 ```sh
 make build            # builds cmd/aibreak and cmd/aibreakd
