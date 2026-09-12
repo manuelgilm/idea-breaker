@@ -1,0 +1,38 @@
+# SQLite runtime databases
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Compiled Go binaries and artifacts
+/aibreak
+/aibreakd
+/bin/
+*.test
+*.out
+coverage.*
+profile.*
+
+# Go build cache (kept outside repo by default; listed for safety)
+vendor/
+
+# Local env / secrets
+.env
+.env.*
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (opencode tooling deps)
+node_modules/
+
+# GoReleaser output
+dist/

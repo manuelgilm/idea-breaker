@@ -1,0 +1,58 @@
+# GoReleaser v2 configuration for aibreak.
+#
+# All dependencies are pure Go (modernc.org/sqlite, no CGO), so every target
+# below cross-compiles with plain GOOS/GOARCH and CGO_ENABLED=0.
+version: 2
+
+project_name: aibreak
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: aibreak
+    main: ./cmd/aibreak
+    binary: aibreak
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+
+  - id: aibreakd
+    main: ./cmd/aibreakd
+    binary: aibreakd
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: default
+    name_template: "{{ .ProjectName }}-{{ .Version }}-{{ .Os }}-{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "checksums.txt"
