@@ -6,11 +6,13 @@
 
 ## 1. Purpose
 
-aibreak is an AI-powered **idea evaluation engine** exposed through two
+aibreak is an AI-powered **idea evaluation engine** exposed through three
 front-ends:
 
 - a **CLI** (`aibreak`)
 - an **HTTP API** (`aibreakd`)
+- a **desktop app** (`aibreak-desktop`, Wails-based, see §11) — local,
+  single-user, same non-goals as v1 (no auth, no real-time collaboration)
 
 It is for **anyone evaluating an idea** — founders, product managers,
 students, researchers, hobbyists, or teams weighing a feature — not only
@@ -65,28 +67,27 @@ gain an `OwnerID` field; it is intentionally omitted from v1.
 ### Persona
 | Field          | Type    | Notes                                            |
 |----------------|---------|--------------------------------------------------|
-| `ID`           | string  | Stable slug, e.g. `skeptic`, `optimist`          |
+| `ID`           | string  | Generated ULID for custom personas; built-ins keep stable slugs (`skeptic`, `optimist`, `engineer`) |
 | `Name`         | string  | Display name                                     |
 | `SystemPrompt` | string  | Instruction set defining the perspective (should include 0–5 rubric anchors; see §3) |
 | `Weight`       | float   | Default 1.0; used in the aggregate score         |
-| `Version`      | string  | Semver; bumped on change, captured by evaluations |
+| `Version`      | int     | Auto-incremented (1, 2, 3, …) on every edit; captured by evaluations |
 | `Created`      | time    | Set on creation                                  |
 
-Built-in personas ship with the tool with a fixed `Version` and are **not
-editable** (edit and delete are rejected for built-in ids). Custom personas are
-**persisted in the store** and editable in place via `UpdatePersona` (see §4):
-the caller supplies the fields to change plus a new `Version`, which must be
-non-empty and different from the current one — every edit bumps the version.
-Every evaluation captures the persona `Version` used, so results stay
-reproducible if a persona later changes. `ID` must be a slug matching
-`[a-z0-9-]+`; `Weight` must be `>= 0`.
+Built-in personas ship with the tool at `Version` `1` and are **not editable**
+(edit and delete are rejected for built-in ids). Custom personas are **persisted
+in the store** with a **generated ULID** and are editable in place via
+`UpdatePersona` (see §4): every edit **auto-increments the `Version`** (1 → 2 →
+3 → …), so each version is a distinct, reproducible snapshot. Every evaluation
+captures the persona `Version` used, so results stay reproducible if a persona
+later changes. `Weight` must be `>= 0`.
 
 Partial persona updates use a `PersonaPatch` type with pointer/optional fields
-(`*string` for name/system-prompt/version, `*float64` for weight), mirroring
-`IdeaPatch`: a nil field means "unchanged", a non-nil field means "set to this
-value".
+(`*string` for name/system-prompt, `*float64` for weight), mirroring `IdeaPatch`:
+a nil field means "unchanged", a non-nil field means "set to this value". The
+`Version` is never caller-supplied — the service bumps it automatically.
 
-**Built-in personas (v1):** seeded with `Weight` `1.0` and `Version` `1.0.0`.
+**Built-in personas (v1):** seeded with `Weight` `1.0` and `Version` `1`.
 Each `SystemPrompt` includes its 0–5 rubric anchors.
 
 | ID | Name | SystemPrompt |
@@ -101,7 +102,7 @@ Each `SystemPrompt` includes its 0–5 rubric anchors.
 | `RunID`         | string   | Groups all evaluations of one run       |
 | `IdeaID`        | string   | Idea being evaluated                    |
 | `PersonaID`     | string   | Persona that produced this result       |
-| `PersonaVersion`| string   | Persona version captured at eval time   |
+| `PersonaVersion`| int      | Persona version captured at eval time   |
 | `Weight`        | float    | Persona weight captured at eval time    |
 | `Status`        | string   | `success` or `failed`                   |
 | `Score`         | int      | 0–5 (inclusive); present only on success |
@@ -289,19 +290,29 @@ test.
 ### Update a persona
 
 - **Given** an existing custom persona, **When** `UpdatePersona(id, ...)` is
-  called with a new `Version` (non-empty, different from current) and one or
-  more provided fields, **Then** the provided fields are merged into the persona
-  (unprovided fields are unchanged).
+  called with one or more provided fields, **Then** the provided fields are
+  merged into the persona (unprovided fields are unchanged) and its `Version`
+  auto-increments by one.
+- **Given** a persona created with `Version` 1, **When** `UpdatePersona` is
+  called once, **Then** the resulting `Version` is 2.
 - **Given** a `Name` or `SystemPrompt` provided as empty, **When**
   `UpdatePersona` is called, **Then** it returns a validation error.
 - **Given** a `Weight` provided as negative, **When** `UpdatePersona` is
   called, **Then** it returns a validation error.
-- **Given** a missing `Version` or a `Version` equal to the current one,
-  **When** `UpdatePersona` is called, **Then** it returns a validation error.
 - **Given** a built-in persona id, **When** `UpdatePersona` is called, **Then**
   it returns a conflict error (built-ins are not editable).
 - **Given** an unknown id, **When** `UpdatePersona` is called, **Then** it
   returns a not-found error.
+
+### Create a persona
+
+- **Given** a valid `Name` and `SystemPrompt` (and optional `Weight`), **When**
+  `CreatePersona` is called, **Then** the persona is stored with a **generated
+  ULID**, `Version` 1, and timestamps, and is retrievable by `GetPersona`.
+- **Given** an empty `Name` or `SystemPrompt`, **When** `CreatePersona` is
+  called, **Then** it returns a validation error.
+- **Given** a negative `Weight`, **When** `CreatePersona` is called, **Then**
+  it returns a validation error.
 
 ### Evaluate an idea
 
@@ -319,8 +330,8 @@ test.
 - **Given** the provider returns a JSON object `{"score": 3, "rationale": "..."}`
   **When** parsing, **Then** the engine produces an `Evaluation` with
   `Status=success` and score 3.
-- **Given** a persona with `Version` `1.2.0`, **When** `Evaluate` runs, **Then**
-  the resulting `Evaluation` records `PersonaVersion` `1.2.0`.
+- **Given** a persona with `Version` `2`, **When** `Evaluate` runs, **Then**
+  the resulting `Evaluation` records `PersonaVersion` `2`.
 - **Given** the provider returns non-JSON, a non-integer, or an out-of-range
   score, **When** parsing, **Then** the result is treated as unparseable (see
   retry rule above).
@@ -530,11 +541,12 @@ The engine parses the provider content as strict JSON:
 - The registry owns the schema + migrations. Tables:
 
   - `ideas(id, title, body, tags, created_at, updated_at)`
-  - `personas(id, name, system_prompt, weight, version, created_at)`
+  - `personas(id, name, system_prompt, weight, version INTEGER, created_at)`
   - `runs(run_id, idea_id, total, requested, responded, summary, verdict, spread, created_at)`
-  - `evaluations(run_id, idea_id, persona_id, persona_version, weight, status, score, rationale, error, created_at)`
+  - `evaluations(run_id, idea_id, persona_id, persona_version INTEGER, weight, status, score, rationale, error, created_at)`
   - `feedbacks(id, idea_id, author, score, rationale, aspect, created_at)`
   - `resources(id, idea_id, url, title, kind, note, created_at)`
+  - `provider_keys(id, provider, label, hint, is_default, created_at)` — metadata only; the secret lives in the OS keyring
 
 - **Encoding**: `ideas.tags` is a JSON array of strings in a single TEXT column.
   `ListIdeas(tag)` matches ideas whose `tags` array contains the exact tag value.
@@ -545,9 +557,9 @@ The engine parses the provider content as strict JSON:
   success.
 
 - Built-in personas are seeded on first run; custom personas are created,
-  listed, updated, and deleted at runtime. Editing a custom persona requires a
-  new `Version` (non-empty, different from current); built-in personas are
-  neither editable nor deletable.
+  listed, updated, and deleted at runtime. Editing a custom persona
+  auto-increments its `Version`; built-in personas are neither editable nor
+  deletable.
 - **Cascade policy**: deleting an idea cascade-deletes its **runs**, evaluations,
   feedback, and resources (`ON DELETE CASCADE`). Deleting a persona does **not**
   delete past evaluations — they remain as historical records because each
@@ -612,8 +624,6 @@ The engine parses the provider content as strict JSON:
   removed.
 - **Given** a custom persona is created, **When** the store is queried, **Then**
   it is returned with its `Version` and `Created` timestamp.
-- **Given** a persona `ID` that is not a valid slug (`[a-z0-9-]+`), **When**
-  `CreatePersona` is called, **Then** it returns a validation error.
 - **Given** a persona with a negative `Weight`, **When** `CreatePersona` is
   called, **Then** it returns a validation error.
 - **Given** a persona `ID` that already exists, **When** `CreatePersona` is
@@ -654,8 +664,8 @@ error.
 | `aibreak registry edit <id>` | Update an idea                        | `--title`, `--body`, `--tag` |
 | `aibreak registry rm <id>` | Delete an idea                         |                             |
 | `aibreak persona list`  | List available personas                   | `--json`                    |
-| `aibreak persona add`   | Create a custom persona                   | `--id`, `--name`, `--prompt`, `--weight`, `--version` |
-| `aibreak persona edit <id>` | Update a custom persona                 | `--name`, `--prompt`, `--weight`, `--version` (required, must differ) |
+| `aibreak persona add`   | Create a custom persona                   | `--name`, `--prompt`, `--weight` |
+| `aibreak persona edit <id>` | Update a custom persona                 | `--name`, `--prompt`, `--weight` |
 | `aibreak persona rm <id>` | Delete a custom persona                 |                             |
 | `aibreak history <id>`    | List an idea's past evaluations         | `--json`                    |
 | `aibreak feedback add <id>` | Add human feedback                     | `--author`, `--score`, `--rationale`, `--aspect` |
@@ -668,8 +678,9 @@ error.
 - `--json` switches output to machine-readable JSON.
 - Text output is human-readable (scores and rationale).
 - `registry edit` flags are optional; only provided flags change the idea.
-- `persona edit` flags are optional except `--version`, which is required and
-  must differ from the current version; only provided flags change the persona.
+- `persona add` prints the generated persona ID; `persona edit` flags are
+  optional and only provided flags change the persona (the version
+  auto-increments).
 
 ### Acceptance criteria
 
@@ -694,10 +705,10 @@ error.
 - **Given** `history <id>` with saved evaluations, **When** run, **Then** it
   prints past evaluations grouped by run in chronological order (with `spread`
   and `verdict` when present), exiting 0.
-- **Given** `persona edit <id> --prompt "..." --version 2.0.0`, **When** run,
-  **Then** it updates the persona and exits 0.
-- **Given** `persona edit <id>` with a missing or unchanged `--version`,
-  **When** run, **Then** it prints an error and exits non-zero.
+- **Given** `persona edit <id> --prompt "..."`, **When** run, **Then** it
+  updates the persona (bumping its version) and exits 0.
+- **Given** `persona add --name "N" --prompt "P"`, **When** run, **Then** it
+  prints the generated persona ID and exits 0.
 - **Given** `persona edit skeptic ...`, **When** run, **Then** it prints an
   error and exits non-zero (built-ins are not editable).
 - **Given** `feedback add <id> --author A --score 3 --rationale "..."`, **When**
@@ -743,7 +754,7 @@ Server: `aibreakd`. JSON over HTTP. Errors use a consistent envelope:
 |-------------------|------|----------------------------------------|
 | `validation_error`| 400  | Malformed or invalid request body      |
 | `not_found`       | 404  | Unknown resource id                    |
-| `conflict`        | 409  | Duplicate id (e.g. persona slug)       |
+| `conflict`        | 409  | Duplicate id (e.g. persona id)        |
 | `rate_limited`    | 429  | Upstream LLM rate limit                |
 | `llm_error`       | 502  | Upstream LLM/other provider failure    |
 | `internal`        | 500  | Unexpected server error                |
@@ -766,11 +777,11 @@ Request bodies mirror the domain model (§2) with the required fields noted.
   "rationale"?: string, "aspect"?: string }` → `201` Feedback.
 - `POST /v1/ideas/{id}/resources` — `{ "url": required, "title"?: string,
   "kind"?: string, "note"?: string }` → `201` Resource.
-- `POST /v1/personas` — `{ "id": required slug, "name": required,
-  "system_prompt": required, "weight"?: float, "version"?: string }` → `201` Persona.
+- `POST /v1/personas` — `{ "name": required, "system_prompt": required,
+  "weight"?: float }` → `201` Persona (with a generated `id` and `version` 1).
 - `PATCH /v1/personas/{id}` — partial `{ "name"?, "system_prompt"?,
-  "weight"?, "version": required, must differ }` → `200` Persona (unspecified
-  fields are unchanged; a built-in id returns `409`).
+  "weight"? }` → `200` Persona (unspecified fields are unchanged; the version
+  auto-increments; a built-in id returns `409`).
 - `GET /v1/ideas/{id}/evaluations` → `200` JSON array of `FeasibilityScore`
   objects (each with `run_id`, `total`, `requested`, `responded`, `spread`,
   `summary`, `verdict`, and a `breakdown` of evaluations), ordered by `run_id`
@@ -800,8 +811,9 @@ Request bodies mirror the domain model (§2) with the required fields noted.
   handled, **Then** it returns `200` with a JSON array of `FeasibilityScore`
   objects (each with `run_id`, `total`, `requested`, `responded`, `spread`,
   `summary`, `verdict`, and `breakdown`), ordered by `run_id` ascending.
-- **Given** a `PATCH /v1/personas/{id}` with `{"version":"2.0.0"}`, **When**
-  handled, **Then** it returns `200` with the updated persona.
+- **Given** a `PATCH /v1/personas/{id}` with `{"name":"New"}`, **When**
+  handled, **Then** it returns `200` with the updated persona (whose `version`
+  incremented).
 - **Given** a `PATCH /v1/personas/{skeptic}` (built-in), **When** handled,
   **Then** it returns `409` with code `conflict`.
 - **Given** `POST /v1/ideas/{id}/feedback` with a valid author/score, **When**
@@ -827,6 +839,14 @@ Sources, in priority order: flags > env vars > config file > defaults.
 | DB path            | `AIBREAK_DB`        | `aibreak.db`   |
 | API listen address | `AIBREAK_ADDR`      | `127.0.0.1:8080`    |
 
+The desktop app (`aibreak-desktop`) manages LLM provider API keys as
+first-class objects (§11): key **metadata** (id, label, masked hint, default
+flag) lives in the SQLite store, while each **secret** lives in the **OS
+keyring** (service `aibreak`, account `<provider>:<keyID>`). One key per
+provider is the **default**; the desktop applies it to the running provider at
+startup and whenever the default changes, taking precedence over the
+`OPENAI_API_KEY` env var / config file.
+
 ## 10. Non-functional requirements
 
 - The engine must be deterministic given the same provider output (no hidden
@@ -834,3 +854,89 @@ Sources, in priority order: flags > env vars > config file > defaults.
 - All external I/O (LLM, SQLite, HTTP) is behind interfaces for testability.
 - Cancellation: all engine/provider operations honor `context.Context`.
 - Logging: structured logging via `log/slog`.
+
+## 11. Desktop app (aibreak-desktop)
+
+`aibreak-desktop` is a local, single-user Wails desktop app. Its Go backend
+binds `internal/service` methods directly (in-process, no HTTP); see the
+technical spec for the binding contract. It introduces **no new domain
+behavior** — every view below maps to existing service methods (§4). The only
+new capability is the **provider settings screen**, which manages API keys as
+first-class objects: metadata in the store, secrets in the OS keyring, with one
+default key applied to the running provider (see §9).
+
+### Screens
+
+1. **Welcome** — app branding and a single **Start** button that transitions
+   into the main app. No backend call; it is the seam for future
+   authentication (still deferred per §1).
+
+2. **Main app** — a left sidebar (navigation) and a content area:
+   - **Registry** → **Ideas**, **Personas**.
+   - **LLM Provider** → **OpenAI**.
+
+### Views
+
+- **Ideas** — a grid of cards plus a **Create / Register Idea** button. Each
+  card shows the title and the first sentences of the body, a **feasibility
+  dot** (top-right), and actions to **edit**, **delete**, and open **history**.
+  Clicking a card opens the detail view.
+- **Idea detail** — title, body, and tags (editable), creation/update time, a
+  **Resources** section (add/remove `{url, title, kind, note}`), an **Evaluate**
+  panel (persona checkboxes + a summary toggle + Evaluate), **History** (past
+  runs), and **Feedback** (list + add).
+- **Personas** — lists all personas with their `Name`, generated `ID`, and
+  auto-incremented `Version`; built-ins are marked read-only, custom personas
+  can be created, edited (each edit bumps the version), and deleted.
+- **OpenAI provider** — shows the provider name/model and a list of registered
+  API keys (label + masked suffix + default flag); the user can **add**, **set
+  default**, and **delete** keys (the secret is stored in the keyring; metadata
+  in the store).
+
+### Feasibility dot
+
+Each idea card is color-coded from the **latest run's `Total`** (0–100):
+
+| Score | Color | Meaning |
+| --- | --- | --- |
+| no run | gray | not evaluated yet |
+| `<= 50` | red | not feasible |
+| `51 – 69` | yellow | middling |
+| `>= 70` | green | feasible |
+
+The latest run is the one with the greatest `RunID` (ULIDs are time-ordered;
+`ListRuns` returns runs ordered ascending by `RunID`).
+
+### Acceptance criteria
+
+- **Given** registered ideas, **When** the ideas view loads, **Then** it shows
+  every idea as a card with a feasibility dot derived from its latest run (gray
+  when it has none).
+- **Given** an idea and selected personas, **When** evaluation runs, **Then**
+  the results show the total, spread, breakdown, and — when synthesis was
+  requested — the verdict and summary, and the card's dot reflects the new
+  total.
+- **Given** an idea with past runs, **When** the history view loads, **Then**
+  it shows each run's total, spread, and verdict (when present).
+- **Given** valid author, score, and rationale, **When** feedback is submitted,
+  **Then** it is stored and appears in the feedback view.
+- **Given** a valid URL, **When** a resource is added, **Then** it is stored
+  and appears in the resources view.
+- **Given** a custom persona, **When** it is created, **Then** it appears in
+  the personas view and is selectable during evaluation; built-ins are shown
+  but not deletable.
+- **Given** an API key, **When** it is added in the provider view, **Then** its
+  metadata appears in the key list (with a masked suffix) and its secret is
+  stored in the OS keyring; the first key becomes the default and is used by
+  subsequent evaluations.
+- **Given** a registered key that is not the default, **When** the user marks it
+  default, **Then** the running provider switches to it and the previous default
+  is cleared.
+- **Given** the default key, **When** it is deleted, **Then** the most recently
+  added remaining key is promoted to default (or none if no keys remain).
+
+### Out of scope (still deferred per §1)
+
+- Authentication (the welcome screen is only the seam).
+- Model / base-URL / temperature settings in the UI (config-file/env only).
+- Multi-provider configuration beyond OpenAI.

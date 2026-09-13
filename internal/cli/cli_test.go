@@ -127,23 +127,25 @@ func TestEvaluate(t *testing.T) {
 
 func TestPersonaEdit(t *testing.T) {
 	env := newCLIEnv(t)
-	_, _, err := env.run("persona", "add", "--id", "critic", "--name", "Critic", "--prompt", "be critical")
+	out, _, err := env.run("persona", "add", "--name", "Critic", "--prompt", "be critical")
+	require.NoError(t, err)
+	id := strings.TrimSpace(out)
+	assert.NotEmpty(t, id)
+
+	_, _, err = env.run("persona", "edit", id, "--name", "Critic v2")
 	require.NoError(t, err)
 
-	_, _, err = env.run("persona", "edit", "critic", "--name", "Critic v2", "--version", "2.0.0")
+	out, _, err = env.run("persona", "list")
 	require.NoError(t, err)
+	assert.Contains(t, out, "Critic v2")
 
-	out, _, err := env.run("persona", "list")
-	require.NoError(t, err)
-	assert.Contains(t, out, "critic\tCritic v2")
+	_, _, err = env.run("persona", "edit", id, "--name", "")
+	assert.Error(t, err, "empty name is rejected")
 
-	_, _, err = env.run("persona", "edit", "critic", "--name", "Nope")
-	assert.Error(t, err, "version is required")
-
-	_, _, err = env.run("persona", "edit", "skeptic", "--name", "Nope", "--version", "9.0.0")
+	_, _, err = env.run("persona", "edit", "skeptic", "--name", "Nope")
 	assert.Error(t, err, "built-ins are not editable")
 
-	_, _, err = env.run("persona", "edit", "nope", "--name", "Nope", "--version", "1.0.0")
+	_, _, err = env.run("persona", "edit", "nope", "--name", "Nope")
 	assert.Error(t, err, "unknown id")
 }
 

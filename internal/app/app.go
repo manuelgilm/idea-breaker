@@ -13,18 +13,18 @@ import (
 	"aibreak/internal/service"
 )
 
-// Build assembles the service and its store from configuration. The caller is
-// responsible for closing the returned store.
-func Build(cfg config.Config) (*service.Service, *sqlite.Store, error) {
+// Build assembles the service, its provider, and its store from configuration.
+// The caller is responsible for closing the returned store.
+func Build(cfg config.Config) (*service.Service, *openai.Provider, *sqlite.Store, error) {
 	if cfg.DBPath != "" && cfg.DBPath != ":memory:" {
 		if err := ensureDir(filepath.Dir(cfg.DBPath)); err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 	}
 
 	store, err := sqlite.Open(cfg.DBPath)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	provider := openai.New(cfg.APIKey)
@@ -33,7 +33,7 @@ func Build(cfg config.Config) (*service.Service, *sqlite.Store, error) {
 		// default
 	default:
 		store.Close()
-		return nil, nil, fmt.Errorf("unsupported llm provider %q", cfg.LLMProvider)
+		return nil, nil, nil, fmt.Errorf("unsupported llm provider %q", cfg.LLMProvider)
 	}
 
 	evaluator := engine.New(provider,
@@ -44,7 +44,7 @@ func Build(cfg config.Config) (*service.Service, *sqlite.Store, error) {
 		engine.WithTimeout(cfg.Timeout),
 	)
 
-	return service.New(store, evaluator), store, nil
+	return service.New(store, evaluator), provider, store, nil
 }
 
 func ensureDir(dir string) error {

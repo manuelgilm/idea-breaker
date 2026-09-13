@@ -21,7 +21,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	svc, store, err := app.Build(cfg)
+	svc, _, store, err := app.Build(cfg)
 	if err != nil {
 		logger.Error("build", "err", err)
 		os.Exit(1)

@@ -27,13 +27,15 @@ type Idea struct {
 	Updated time.Time `json:"updated"`
 }
 
-// Persona defines an evaluation perspective.
+// Persona defines an evaluation perspective. Custom personas have a generated
+// ULID ID and an auto-incrementing integer Version (1, 2, 3, ...); built-in
+// personas keep their stable slug IDs and start at Version 1.
 type Persona struct {
 	ID           string    `json:"id"`
 	Name         string    `json:"name"`
 	SystemPrompt string    `json:"system_prompt"`
 	Weight       float64   `json:"weight"`
-	Version      string    `json:"version"`
+	Version      int       `json:"version"`
 	Created      time.Time `json:"created"`
 }
 
@@ -42,7 +44,7 @@ type Evaluation struct {
 	RunID          string    `json:"run_id"`
 	IdeaID         string    `json:"idea_id"`
 	PersonaID      string    `json:"persona_id"`
-	PersonaVersion string    `json:"persona_version"`
+	PersonaVersion int       `json:"persona_version"`
 	Weight         float64   `json:"weight"`
 	Status         string    `json:"status"`
 	Score          int       `json:"score"`
@@ -104,11 +106,22 @@ type IdeaPatch struct {
 }
 
 // PersonaPatch is a partial update for a persona. Nil fields mean "unchanged".
-// Version is required by the service on every edit and must differ from the
-// current version, so every change bumps the version captured by evaluations.
+// The service bumps the persona's Version automatically on every update, so
+// callers never supply a version.
 type PersonaPatch struct {
 	Name         *string
 	SystemPrompt *string
 	Weight       *float64
-	Version      *string
+}
+
+// APIKey is a stored LLM provider credential. The full secret never lives in
+// the store — only its metadata (id, label, masked hint, and default flag);
+// the secret itself is held in the OS keyring keyed by ID.
+type APIKey struct {
+	ID        string    `json:"id"`
+	Provider  string    `json:"provider"`
+	Label     string    `json:"label"`
+	Hint      string    `json:"hint"`
+	IsDefault bool      `json:"is_default"`
+	Created   time.Time `json:"created"`
 }
