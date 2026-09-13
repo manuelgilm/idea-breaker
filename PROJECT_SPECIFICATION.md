@@ -905,7 +905,8 @@ default key applied to the running provider (see §9).
 - **Idea detail** — title, body, and tags (editable), creation/update time, a
   **Resources** section (add/remove `{url, title, kind, note}`), an **Evaluate**
   panel (persona checkboxes + a summary toggle + Evaluate), **History** (past
-  runs), and **Feedback** (list + add).
+  runs; selecting a run expands its per-persona breakdown), and **Feedback**
+  (list + add).
 - **Personas** — lists all personas with their `Name`, generated `ID`, and
   auto-incremented `Version`; built-ins are marked read-only, custom personas
   can be created, edited (each edit bumps the version), and deleted.
@@ -939,6 +940,8 @@ The latest run is the one with the greatest `RunID` (ULIDs are time-ordered;
   total.
 - **Given** an idea with past runs, **When** the history view loads, **Then**
   it shows each run's total, spread, and verdict (when present).
+- **Given** a past run, **When** the user selects it, **Then** the run's
+  per-persona breakdown (scores and rationale) is shown.
 - **Given** valid author, score, and rationale, **When** feedback is submitted,
   **Then** it is stored and appears in the feedback view.
 - **Given** a valid URL, **When** a resource is added, **Then** it is stored
