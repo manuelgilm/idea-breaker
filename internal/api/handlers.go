@@ -38,18 +38,15 @@ type resourceRequest struct {
 }
 
 type personaRequest struct {
-	ID           string  `json:"id"`
 	Name         string  `json:"name"`
 	SystemPrompt string  `json:"system_prompt"`
 	Weight       float64 `json:"weight"`
-	Version      string  `json:"version"`
 }
 
 type personaPatchRequest struct {
 	Name         *string  `json:"name"`
 	SystemPrompt *string  `json:"system_prompt"`
 	Weight       *float64 `json:"weight"`
-	Version      *string  `json:"version"`
 }
 
 func (s *Server) createIdea(w http.ResponseWriter, r *http.Request) {
@@ -213,7 +210,7 @@ func (s *Server) createPersona(w http.ResponseWriter, r *http.Request) {
 		writeError(w, err)
 		return
 	}
-	p, err := s.svc.CreatePersona(r.Context(), req.ID, req.Name, req.SystemPrompt, req.Weight, req.Version)
+	p, err := s.svc.CreatePersona(r.Context(), req.Name, req.SystemPrompt, req.Weight)
 	if err != nil {
 		writeError(w, err)
 		return
@@ -231,7 +228,6 @@ func (s *Server) updatePersona(w http.ResponseWriter, r *http.Request) {
 		Name:         req.Name,
 		SystemPrompt: req.SystemPrompt,
 		Weight:       req.Weight,
-		Version:      req.Version,
 	})
 	if err != nil {
 		writeError(w, err)

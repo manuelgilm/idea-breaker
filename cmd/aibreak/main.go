@@ -19,7 +19,7 @@ func main() {
 		cfg.DBPath = p
 	}
 
-	svc, store, err := app.Build(cfg)
+	svc, _, store, err := app.Build(cfg)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

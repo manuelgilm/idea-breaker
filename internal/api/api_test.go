@@ -177,39 +177,43 @@ func TestPersonas(t *testing.T) {
 	assert.Len(t, personas, 3)
 
 	rec = doJSON(t, h, http.MethodPost, "/v1/personas", map[string]any{
-		"id": "investor", "name": "Investor", "system_prompt": "p",
+		"name": "Investor", "system_prompt": "p",
 	})
 	assert.Equal(t, http.StatusCreated, rec.Code)
+	created := decode[domain.Persona](t, rec)
+	assert.NotEmpty(t, created.ID)
+	assert.Equal(t, 1, created.Version)
 }
 
 func TestUpdatePersona(t *testing.T) {
 	h := newTestHandler(t)
 	rec := doJSON(t, h, http.MethodPost, "/v1/personas", map[string]any{
-		"id": "investor", "name": "Investor", "system_prompt": "p",
+		"name": "Investor", "system_prompt": "p",
 	})
 	require.Equal(t, http.StatusCreated, rec.Code)
+	created := decode[domain.Persona](t, rec)
 
-	rec = doJSON(t, h, http.MethodPatch, "/v1/personas/investor", map[string]any{
-		"name": "Investor v2", "version": "2.0.0",
+	rec = doJSON(t, h, http.MethodPatch, "/v1/personas/"+created.ID, map[string]any{
+		"name": "Investor v2",
 	})
 	assert.Equal(t, http.StatusOK, rec.Code)
 	p := decode[domain.Persona](t, rec)
 	assert.Equal(t, "Investor v2", p.Name)
-	assert.Equal(t, "2.0.0", p.Version)
+	assert.Equal(t, 2, p.Version, "version auto-increments")
 	assert.Equal(t, "p", p.SystemPrompt, "unprovided prompt preserved")
 
-	rec = doJSON(t, h, http.MethodPatch, "/v1/personas/investor", map[string]any{
-		"name": "Nope",
+	rec = doJSON(t, h, http.MethodPatch, "/v1/personas/"+created.ID, map[string]any{
+		"name": "",
 	})
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 
 	rec = doJSON(t, h, http.MethodPatch, "/v1/personas/skeptic", map[string]any{
-		"name": "Nope", "version": "9.0.0",
+		"name": "Nope",
 	})
 	assert.Equal(t, http.StatusConflict, rec.Code)
 
 	rec = doJSON(t, h, http.MethodPatch, "/v1/personas/nope", map[string]any{
-		"name": "Nope", "version": "1.0.0",
+		"name": "Nope",
 	})
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }

@@ -68,72 +68,51 @@ func TestUpdatePersona(t *testing.T) {
 	ctx := context.Background()
 	s := newTestService(t, scripted(nil))
 
-	_, err := s.CreatePersona(ctx, "critic", "Critic", "be critical", 1, "1.0.0")
+	created, err := s.CreatePersona(ctx, "Critic", "be critical", 1)
 	require.NoError(t, err)
+	assert.Equal(t, 1, created.Version)
+	assert.NotEmpty(t, created.ID)
 
 	t.Run("partial merge preserves unprovided fields", func(t *testing.T) {
 		name := "Critic v2"
-		p, err := s.UpdatePersona(ctx, "critic", domain.PersonaPatch{Name: &name, Version: strptr("2.0.0")})
+		p, err := s.UpdatePersona(ctx, created.ID, domain.PersonaPatch{Name: &name})
 		require.NoError(t, err)
 		assert.Equal(t, "Critic v2", p.Name)
 		assert.Equal(t, "be critical", p.SystemPrompt, "prompt preserved")
 		assert.Equal(t, 1.0, p.Weight, "weight preserved")
-		assert.Equal(t, "2.0.0", p.Version)
+		assert.Equal(t, 2, p.Version, "version auto-increments on update")
 	})
 
 	t.Run("empty name rejected", func(t *testing.T) {
 		empty := ""
-		_, err := s.UpdatePersona(ctx, "critic", domain.PersonaPatch{Name: &empty, Version: strptr("3.0.0")})
+		_, err := s.UpdatePersona(ctx, created.ID, domain.PersonaPatch{Name: &empty})
 		assert.ErrorIs(t, err, ErrValidation)
 	})
 
 	t.Run("empty prompt rejected", func(t *testing.T) {
 		empty := ""
-		_, err := s.UpdatePersona(ctx, "critic", domain.PersonaPatch{SystemPrompt: &empty, Version: strptr("3.0.0")})
+		_, err := s.UpdatePersona(ctx, created.ID, domain.PersonaPatch{SystemPrompt: &empty})
 		assert.ErrorIs(t, err, ErrValidation)
 	})
 
 	t.Run("negative weight rejected", func(t *testing.T) {
 		neg := -1.0
-		_, err := s.UpdatePersona(ctx, "critic", domain.PersonaPatch{Weight: &neg, Version: strptr("3.0.0")})
-		assert.ErrorIs(t, err, ErrValidation)
-	})
-
-	t.Run("missing version rejected", func(t *testing.T) {
-		name := "Nope"
-		_, err := s.UpdatePersona(ctx, "critic", domain.PersonaPatch{Name: &name})
-		assert.ErrorIs(t, err, ErrValidation)
-	})
-
-	t.Run("unchanged version rejected", func(t *testing.T) {
-		all, err := s.ListPersonas(ctx)
-		require.NoError(t, err)
-		var current string
-		for _, p := range all {
-			if p.ID == "critic" {
-				current = p.Version
-			}
-		}
-		require.NotEmpty(t, current)
-		name := "Nope"
-		_, err = s.UpdatePersona(ctx, "critic", domain.PersonaPatch{Name: &name, Version: &current})
+		_, err := s.UpdatePersona(ctx, created.ID, domain.PersonaPatch{Weight: &neg})
 		assert.ErrorIs(t, err, ErrValidation)
 	})
 
 	t.Run("built-in rejected", func(t *testing.T) {
 		prompt := "new prompt"
-		_, err := s.UpdatePersona(ctx, "skeptic", domain.PersonaPatch{SystemPrompt: &prompt, Version: strptr("9.0.0")})
+		_, err := s.UpdatePersona(ctx, "skeptic", domain.PersonaPatch{SystemPrompt: &prompt})
 		assert.ErrorIs(t, err, ErrConflict)
 	})
 
 	t.Run("unknown id", func(t *testing.T) {
 		name := "Nope"
-		_, err := s.UpdatePersona(ctx, "nope", domain.PersonaPatch{Name: &name, Version: strptr("1.0.0")})
+		_, err := s.UpdatePersona(ctx, "nope", domain.PersonaPatch{Name: &name})
 		assert.ErrorIs(t, err, ErrNotFound)
 	})
 }
-
-func strptr(s string) *string { return &s }
 
 func TestUpdateIdeaPartial(t *testing.T) {
 	ctx := context.Background()
@@ -160,21 +139,19 @@ func TestCreatePersonaValidation(t *testing.T) {
 	ctx := context.Background()
 	s := newTestService(t, scripted(nil))
 
-	_, err := s.CreatePersona(ctx, "Bad Slug", "x", "p", 1, "")
-	assert.ErrorIs(t, err, ErrValidation)
+	_, err := s.CreatePersona(ctx, "", "p", 1)
+	assert.ErrorIs(t, err, ErrValidation, "empty name")
 
-	_, err = s.CreatePersona(ctx, "ok", "x", "p", -1, "")
-	assert.ErrorIs(t, err, ErrValidation)
+	_, err = s.CreatePersona(ctx, "x", "", 1)
+	assert.ErrorIs(t, err, ErrValidation, "empty prompt")
 
-	_, err = s.CreatePersona(ctx, "ok", "", "p", 1, "")
-	assert.ErrorIs(t, err, ErrValidation)
+	_, err = s.CreatePersona(ctx, "x", "p", -1)
+	assert.ErrorIs(t, err, ErrValidation, "negative weight")
 
-	p, err := s.CreatePersona(ctx, "ok", "x", "p", 1, "")
+	p, err := s.CreatePersona(ctx, "x", "p", 1)
 	require.NoError(t, err)
-	assert.Equal(t, "1.0.0", p.Version, "version defaults to 1.0.0")
-
-	_, err = s.CreatePersona(ctx, "ok", "x", "p", 1, "")
-	assert.ErrorIs(t, err, ErrConflict, "duplicate id")
+	assert.Equal(t, 1, p.Version, "first version is 1")
+	assert.NotEmpty(t, p.ID, "id is generated")
 }
 
 func TestAddFeedbackValidation(t *testing.T) {
@@ -223,12 +200,12 @@ func TestEvaluate(t *testing.T) {
 
 	idea, _, err := s.CreateIdea(ctx, "X", "body", nil)
 	require.NoError(t, err)
-	_, err = s.CreatePersona(ctx, "a", "a", "marker-a", 1, "1.0.0")
+	a, err := s.CreatePersona(ctx, "a", "marker-a", 1)
 	require.NoError(t, err)
-	_, err = s.CreatePersona(ctx, "b", "b", "marker-b", 1, "1.0.0")
+	b, err := s.CreatePersona(ctx, "b", "marker-b", 1)
 	require.NoError(t, err)
 
-	score, err := s.Evaluate(ctx, idea.ID, []string{"a", "b"}, false)
+	score, err := s.Evaluate(ctx, idea.ID, []string{a.ID, b.ID}, false)
 	require.NoError(t, err)
 	assert.Equal(t, 80.0, score.Total) // (3+5)/2 = 4 -> 80
 
@@ -248,7 +225,7 @@ func TestEvaluateEdgeCases(t *testing.T) {
 
 	idea, _, err := s.CreateIdea(ctx, "X", "", nil)
 	require.NoError(t, err)
-	_, err = s.CreatePersona(ctx, "a", "a", "marker-a", 1, "1.0.0")
+	_, err = s.CreatePersona(ctx, "a", "marker-a", 1)
 	require.NoError(t, err)
 
 	_, err = s.Evaluate(ctx, idea.ID, []string{"missing"}, false)
@@ -281,12 +258,12 @@ func TestEvaluateWithSummary(t *testing.T) {
 
 	idea, _, err := s.CreateIdea(ctx, "X", "body", nil)
 	require.NoError(t, err)
-	_, err = s.CreatePersona(ctx, "a", "a", "marker-a", 1, "1.0.0")
+	a, err := s.CreatePersona(ctx, "a", "marker-a", 1)
 	require.NoError(t, err)
-	_, err = s.CreatePersona(ctx, "b", "b", "marker-b", 1, "1.0.0")
+	b, err := s.CreatePersona(ctx, "b", "marker-b", 1)
 	require.NoError(t, err)
 
-	score, err := s.Evaluate(ctx, idea.ID, []string{"a", "b"}, true)
+	score, err := s.Evaluate(ctx, idea.ID, []string{a.ID, b.ID}, true)
 	require.NoError(t, err)
 	assert.Equal(t, "promising", score.Verdict)
 	assert.Equal(t, "Good upside, some risk.", score.Summary)
@@ -296,4 +273,27 @@ func TestEvaluateWithSummary(t *testing.T) {
 	require.Len(t, runs, 1)
 	assert.Equal(t, "promising", runs[0].Verdict)
 	assert.Equal(t, "Good upside, some risk.", runs[0].Summary)
+}
+
+func TestProviderKeys(t *testing.T) {
+	ctx := context.Background()
+	s := newTestService(t, scripted(nil))
+
+	k1, err := s.AddProviderKey(ctx, domain.APIKey{ID: "k1", Provider: "openai", Label: "a", Hint: "••••1"})
+	require.NoError(t, err)
+	assert.True(t, k1.IsDefault, "first key is default")
+
+	k2, err := s.AddProviderKey(ctx, domain.APIKey{ID: "k2", Provider: "openai", Label: "b", Hint: "••••2"})
+	require.NoError(t, err)
+	assert.False(t, k2.IsDefault)
+
+	require.NoError(t, s.DeleteProviderKey(ctx, "k1"))
+	keys, err := s.ListProviderKeys(ctx, "openai")
+	require.NoError(t, err)
+	require.Len(t, keys, 1)
+	assert.Equal(t, "k2", keys[0].ID)
+	assert.True(t, keys[0].IsDefault, "remaining key promoted to default")
+
+	_, err = s.AddProviderKey(ctx, domain.APIKey{Provider: "openai", Hint: "••••x"})
+	assert.ErrorIs(t, err, ErrValidation)
 }

@@ -78,6 +78,52 @@ ALTER TABLE runs ADD COLUMN verdict TEXT NOT NULL DEFAULT '';
 	`
 ALTER TABLE runs ADD COLUMN spread REAL NOT NULL DEFAULT 0;
 `,
+	// v4: persona versions become auto-incrementing integers (1, 2, 3, ...).
+	// Rebuild the version columns from TEXT (semver) to INTEGER, casting any
+	// existing values.
+	`
+CREATE TABLE personas_v4 (
+    id            TEXT PRIMARY KEY,
+    name          TEXT NOT NULL,
+    system_prompt TEXT NOT NULL,
+    weight        REAL NOT NULL DEFAULT 1.0,
+    version       INTEGER NOT NULL,
+    created_at    TEXT NOT NULL
+);
+INSERT INTO personas_v4 (id, name, system_prompt, weight, version, created_at)
+    SELECT id, name, system_prompt, weight, CAST(version AS INTEGER), created_at FROM personas;
+DROP TABLE personas;
+ALTER TABLE personas_v4 RENAME TO personas;
+
+CREATE TABLE evaluations_v4 (
+    run_id          TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+    idea_id         TEXT NOT NULL REFERENCES ideas(id) ON DELETE CASCADE,
+    persona_id      TEXT NOT NULL,
+    persona_version INTEGER NOT NULL,
+    weight          REAL NOT NULL,
+    status          TEXT NOT NULL,
+    score           INTEGER,
+    rationale       TEXT NOT NULL DEFAULT '',
+    error           TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL,
+    PRIMARY KEY (run_id, persona_id)
+);
+INSERT INTO evaluations_v4 (run_id, idea_id, persona_id, persona_version, weight, status, score, rationale, error, created_at)
+    SELECT run_id, idea_id, persona_id, CAST(persona_version AS INTEGER), weight, status, score, rationale, error, created_at FROM evaluations;
+DROP TABLE evaluations;
+ALTER TABLE evaluations_v4 RENAME TO evaluations;
+`,
+	// v5: provider API key metadata (the secret lives in the OS keyring).
+	`
+CREATE TABLE provider_keys (
+    id         TEXT PRIMARY KEY,
+    provider   TEXT NOT NULL,
+    label      TEXT NOT NULL DEFAULT '',
+    hint       TEXT NOT NULL DEFAULT '',
+    is_default INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+);
+`,
 }
 
 // builtinPersonas are seeded on first run and are not deletable.
@@ -86,7 +132,7 @@ var builtinPersonas = []domain.Persona{
 		ID:      "skeptic",
 		Name:    "Skeptic",
 		Weight:  1.0,
-		Version: "1.0.0",
+		Version: 1,
 		SystemPrompt: "You are a skeptical critic evaluating a product idea. Identify its " +
 			"flaws, risks, and failure modes; be specific and direct. Rate the idea's " +
 			"robustness on a 0-5 scale: 0 = fatally flawed, 1 = major flaws, " +
@@ -96,7 +142,7 @@ var builtinPersonas = []domain.Persona{
 		ID:      "optimist",
 		Name:    "Optimist",
 		Weight:  1.0,
-		Version: "1.0.0",
+		Version: 1,
 		SystemPrompt: "You are an optimist evaluating a product idea. Identify its upside, " +
 			"strengths, and opportunities; be specific and direct. Rate the idea's " +
 			"potential on a 0-5 scale: 0 = no upside, 1 = marginal, 2 = modest, " +
@@ -106,7 +152,7 @@ var builtinPersonas = []domain.Persona{
 		ID:      "engineer",
 		Name:    "Engineer",
 		Weight:  1.0,
-		Version: "1.0.0",
+		Version: 1,
 		SystemPrompt: "You are a pragmatic engineer evaluating a product idea. Assess its " +
 			"technical feasibility and implementation effort; be specific and direct. " +
 			"Rate the idea's feasibility on a 0-5 scale: 0 = infeasible, 1 = very hard, " +

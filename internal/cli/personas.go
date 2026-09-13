@@ -35,13 +35,13 @@ func newPersonaCmd(svc *service.Service) *cobra.Command {
 	}
 	listCmd.Flags().BoolVar(&listJSON, "json", false, "output JSON")
 
-	var id, name, prompt, version string
+	var name, prompt string
 	var weight float64
 	addCmd := &cobra.Command{
 		Use:   "add",
 		Short: "Create a custom persona",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			p, err := svc.CreatePersona(cmd.Context(), id, name, prompt, weight, version)
+			p, err := svc.CreatePersona(cmd.Context(), name, prompt, weight)
 			if err != nil {
 				return err
 			}
@@ -49,13 +49,11 @@ func newPersonaCmd(svc *service.Service) *cobra.Command {
 			return nil
 		},
 	}
-	addCmd.Flags().StringVar(&id, "id", "", "persona id (slug)")
 	addCmd.Flags().StringVar(&name, "name", "", "display name")
 	addCmd.Flags().StringVar(&prompt, "prompt", "", "system prompt")
 	addCmd.Flags().Float64Var(&weight, "weight", 1.0, "score weight")
-	addCmd.Flags().StringVar(&version, "version", "", "version (default 1.0.0)")
 
-	var eName, ePrompt, eVersion string
+	var eName, ePrompt string
 	var eWeight float64
 	editCmd := &cobra.Command{
 		Use:   "edit <id>",
@@ -72,9 +70,6 @@ func newPersonaCmd(svc *service.Service) *cobra.Command {
 			if cmd.Flags().Changed("weight") {
 				patch.Weight = &eWeight
 			}
-			if cmd.Flags().Changed("version") {
-				patch.Version = &eVersion
-			}
 			if _, err := svc.UpdatePersona(cmd.Context(), args[0], patch); err != nil {
 				return err
 			}
@@ -84,7 +79,6 @@ func newPersonaCmd(svc *service.Service) *cobra.Command {
 	editCmd.Flags().StringVar(&eName, "name", "", "new display name")
 	editCmd.Flags().StringVar(&ePrompt, "prompt", "", "new system prompt")
 	editCmd.Flags().Float64Var(&eWeight, "weight", 1.0, "new score weight")
-	editCmd.Flags().StringVar(&eVersion, "version", "", "new version (required, must differ)")
 
 	rmCmd := &cobra.Command{
 		Use:   "rm <id>",

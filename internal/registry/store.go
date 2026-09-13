@@ -42,4 +42,11 @@ type Store interface {
 	AddResource(ctx context.Context, r domain.Resource) (domain.Resource, error)
 	ListResources(ctx context.Context, ideaID string) ([]domain.Resource, error)
 	DeleteResource(ctx context.Context, id string) error
+
+	AddProviderKey(ctx context.Context, k domain.APIKey) (domain.APIKey, error)
+	GetProviderKey(ctx context.Context, id string) (domain.APIKey, error)
+	ListProviderKeys(ctx context.Context, provider string) ([]domain.APIKey, error)
+	DeleteProviderKey(ctx context.Context, id string) error
+	SetDefaultProviderKey(ctx context.Context, id string) error
+	GetDefaultProviderKey(ctx context.Context, provider string) (domain.APIKey, error)
 }

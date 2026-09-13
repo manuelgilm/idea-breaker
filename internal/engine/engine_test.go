@@ -28,7 +28,7 @@ func persona(id string, weight float64) domain.Persona {
 		Name:         id,
 		SystemPrompt: "marker-" + id,
 		Weight:       weight,
-		Version:      "1.0.0",
+		Version:      1,
 	}
 }
 
@@ -151,10 +151,10 @@ func TestEvaluateRecordsPersonaVersionAndWeight(t *testing.T) {
 	p := scripted(map[string]int{"a": 3}, nil)
 	e := New(p)
 	score, err := e.Evaluate(context.Background(), idea(),
-		[]domain.Persona{{ID: "a", Name: "a", SystemPrompt: "marker-a", Weight: 2, Version: "1.2.0"}}, false)
+		[]domain.Persona{{ID: "a", Name: "a", SystemPrompt: "marker-a", Weight: 2, Version: 2}}, false)
 	require.NoError(t, err)
 	require.Len(t, score.Breakdown, 1)
-	assert.Equal(t, "1.2.0", score.Breakdown[0].PersonaVersion)
+	assert.Equal(t, 2, score.Breakdown[0].PersonaVersion)
 	assert.Equal(t, 2.0, score.Breakdown[0].Weight)
 }
 

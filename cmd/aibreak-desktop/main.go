@@ -26,14 +26,17 @@ func main() {
 		os.Exit(1)
 	}
 
-	svc, store, err := app.Build(cfg)
+	svc, provider, store, err := app.Build(cfg)
 	if err != nil {
 		logger.Error("build", "err", err)
 		os.Exit(1)
 	}
 	defer store.Close()
 
-	appl := desktop.New(svc)
+	appl := desktop.New(svc, provider, desktop.WithModel(cfg.Model))
+	if err := appl.ApplyDefaultKey(); err != nil {
+		logger.Warn("apply default api key", "err", err)
+	}
 
 	err = wails.Run(&options.App{
 		Title:  "aibreak",

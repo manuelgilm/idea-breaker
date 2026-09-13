@@ -117,7 +117,7 @@ func TestIdeaDeleteCascades(t *testing.T) {
 	require.NoError(t, err)
 
 	score := domain.FeasibilityScore{RunID: newID(), IdeaID: idea.ID, Total: 60, Requested: 1, Responded: 1, Created: now()}
-	ev := domain.Evaluation{RunID: score.RunID, IdeaID: idea.ID, PersonaID: "p", PersonaVersion: "1.0.0", Weight: 1, Status: domain.StatusSuccess, Score: 3, Created: now()}
+	ev := domain.Evaluation{RunID: score.RunID, IdeaID: idea.ID, PersonaID: "p", PersonaVersion: 1, Weight: 1, Status: domain.StatusSuccess, Score: 3, Created: now()}
 	require.NoError(t, s.SaveRun(ctx, score, []domain.Evaluation{ev}))
 
 	_, err = s.AddFeedback(ctx, domain.Feedback{ID: newID(), IdeaID: idea.ID, Author: "a", Score: 4, Created: now()})
@@ -188,25 +188,25 @@ func TestUpdatePersona(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 
-	custom := domain.Persona{ID: "critic", Name: "Critic", SystemPrompt: "p", Weight: 1, Version: "1.0.0", Created: now()}
+	custom := domain.Persona{ID: "critic", Name: "Critic", SystemPrompt: "p", Weight: 1, Version: 1, Created: now()}
 	_, err := s.CreatePersona(ctx, custom)
 	require.NoError(t, err)
 
-	updated, err := s.UpdatePersona(ctx, domain.Persona{ID: "critic", Name: "Critic v2", SystemPrompt: "p2", Weight: 2, Version: "2.0.0"})
+	updated, err := s.UpdatePersona(ctx, domain.Persona{ID: "critic", Name: "Critic v2", SystemPrompt: "p2", Weight: 2, Version: 2})
 	require.NoError(t, err)
 	assert.Equal(t, "Critic v2", updated.Name)
 	assert.Equal(t, "p2", updated.SystemPrompt)
 	assert.Equal(t, 2.0, updated.Weight)
-	assert.Equal(t, "2.0.0", updated.Version)
+	assert.Equal(t, 2, updated.Version)
 
 	got, err := s.GetPersona(ctx, "critic")
 	require.NoError(t, err)
-	assert.Equal(t, "2.0.0", got.Version)
+	assert.Equal(t, 2, got.Version)
 
-	_, err = s.UpdatePersona(ctx, domain.Persona{ID: "skeptic", Name: "x", Version: "9.9.9"})
+	_, err = s.UpdatePersona(ctx, domain.Persona{ID: "skeptic", Name: "x", Version: 9})
 	assert.ErrorIs(t, err, registry.ErrConflict, "built-ins are not editable")
 
-	_, err = s.UpdatePersona(ctx, domain.Persona{ID: "nope", Version: "1.0.0"})
+	_, err = s.UpdatePersona(ctx, domain.Persona{ID: "nope", Version: 1})
 	assert.ErrorIs(t, err, registry.ErrNotFound)
 }
 
@@ -263,8 +263,8 @@ func TestSaveRunPersistsSpread(t *testing.T) {
 	runID := newID()
 	score := domain.FeasibilityScore{RunID: runID, IdeaID: idea.ID, Total: 60, Requested: 2, Responded: 2, Spread: 4, Created: now()}
 	evals := []domain.Evaluation{
-		{RunID: runID, IdeaID: idea.ID, PersonaID: "a", PersonaVersion: "1.0.0", Weight: 1, Status: domain.StatusSuccess, Score: 1, Created: now()},
-		{RunID: runID, IdeaID: idea.ID, PersonaID: "b", PersonaVersion: "1.0.0", Weight: 1, Status: domain.StatusSuccess, Score: 5, Created: now()},
+		{RunID: runID, IdeaID: idea.ID, PersonaID: "a", PersonaVersion: 1, Weight: 1, Status: domain.StatusSuccess, Score: 1, Created: now()},
+		{RunID: runID, IdeaID: idea.ID, PersonaID: "b", PersonaVersion: 1, Weight: 1, Status: domain.StatusSuccess, Score: 5, Created: now()},
 	}
 	require.NoError(t, s.SaveRun(ctx, score, evals))
 
@@ -289,7 +289,7 @@ func TestSaveRunPersistsSummaryVerdict(t *testing.T) {
 		Created: now(),
 	}
 	evals := []domain.Evaluation{
-		{RunID: runID, IdeaID: idea.ID, PersonaID: "a", PersonaVersion: "1.0.0", Weight: 1, Status: domain.StatusSuccess, Score: 3, Rationale: "ok", Created: now()},
+		{RunID: runID, IdeaID: idea.ID, PersonaID: "a", PersonaVersion: 1, Weight: 1, Status: domain.StatusSuccess, Score: 3, Rationale: "ok", Created: now()},
 	}
 	require.NoError(t, s.SaveRun(ctx, score, evals))
 
@@ -304,11 +304,11 @@ func TestPersonaCRUD(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 
-	custom := domain.Persona{ID: "investor", Name: "Investor", SystemPrompt: "p", Weight: 1.5, Version: "1.0.0", Created: now()}
+	custom := domain.Persona{ID: "investor", Name: "Investor", SystemPrompt: "p", Weight: 1.5, Version: 1, Created: now()}
 	created, err := s.CreatePersona(ctx, custom)
 	require.NoError(t, err)
 	assert.Equal(t, "investor", created.ID)
-	assert.Equal(t, "1.0.0", created.Version)
+	assert.Equal(t, 1, created.Version)
 	assert.False(t, created.Created.IsZero())
 
 	got, err := s.GetPersona(ctx, "investor")
@@ -345,8 +345,8 @@ func TestSaveRunAndListRuns(t *testing.T) {
 	runID := newID()
 	score := domain.FeasibilityScore{RunID: runID, IdeaID: idea.ID, Total: 70, Requested: 2, Responded: 1, Created: now()}
 	evals := []domain.Evaluation{
-		{RunID: runID, IdeaID: idea.ID, PersonaID: "good", PersonaVersion: "1.0.0", Weight: 1, Status: domain.StatusSuccess, Score: 3, Rationale: "ok", Created: now()},
-		{RunID: runID, IdeaID: idea.ID, PersonaID: "bad", PersonaVersion: "1.0.0", Weight: 1, Status: domain.StatusFailed, Error: "boom", Created: now()},
+		{RunID: runID, IdeaID: idea.ID, PersonaID: "good", PersonaVersion: 1, Weight: 1, Status: domain.StatusSuccess, Score: 3, Rationale: "ok", Created: now()},
+		{RunID: runID, IdeaID: idea.ID, PersonaID: "bad", PersonaVersion: 1, Weight: 1, Status: domain.StatusFailed, Error: "boom", Created: now()},
 	}
 	require.NoError(t, s.SaveRun(ctx, score, evals))
 
@@ -363,4 +363,36 @@ func TestSaveRunAndListRuns(t *testing.T) {
 	assert.Equal(t, "good", runs[0].Breakdown[1].PersonaID)
 	assert.Equal(t, domain.StatusSuccess, runs[0].Breakdown[1].Status)
 	assert.Equal(t, 3, runs[0].Breakdown[1].Score)
+}
+
+func TestProviderKeys(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	k1 := domain.APIKey{ID: newID(), Provider: "openai", Label: "work", Hint: "••••4567", IsDefault: true, Created: now()}
+	k2 := domain.APIKey{ID: newID(), Provider: "openai", Label: "personal", Hint: "••••6543", Created: now()}
+
+	created1, err := s.AddProviderKey(ctx, k1)
+	require.NoError(t, err)
+	assert.Equal(t, k1.ID, created1.ID)
+
+	_, err = s.AddProviderKey(ctx, k2)
+	require.NoError(t, err)
+
+	keys, err := s.ListProviderKeys(ctx, "openai")
+	require.NoError(t, err)
+	require.Len(t, keys, 2)
+
+	def, err := s.GetDefaultProviderKey(ctx, "openai")
+	require.NoError(t, err)
+	assert.Equal(t, k1.ID, def.ID)
+
+	require.NoError(t, s.SetDefaultProviderKey(ctx, k2.ID))
+	def, err = s.GetDefaultProviderKey(ctx, "openai")
+	require.NoError(t, err)
+	assert.Equal(t, k2.ID, def.ID)
+
+	require.NoError(t, s.DeleteProviderKey(ctx, k1.ID))
+	_, err = s.GetProviderKey(ctx, k1.ID)
+	assert.ErrorIs(t, err, registry.ErrNotFound)
 }

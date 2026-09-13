@@ -50,6 +50,13 @@ func New(apiKey string, opts ...Option) *Provider {
 	return p
 }
 
+// SetAPIKey replaces the API key used for subsequent requests. It lets a
+// caller (e.g. the desktop settings screen) update credentials at runtime
+// without rebuilding the provider.
+func (p *Provider) SetAPIKey(key string) {
+	p.apiKey = key
+}
+
 type completionRequest struct {
 	Model          string               `json:"model"`
 	Messages       []completionMessage  `json:"messages"`
