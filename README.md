@@ -87,9 +87,15 @@ make desktop-dev     # live-reload development
 make desktop-build   # native binary for the host OS
 ```
 
-The desktop app stores API keys in the **OS keyring**. On Linux a running Secret
-Service (gnome-keyring/KWallet) is required; if absent, it falls back to the
+The desktop app stores API keys in the **OS keyring** (add them via the app's
+LLM Provider settings). On Linux a running Secret Service
+(gnome-keyring/KWallet) is required; if absent, it falls back to the
 `OPENAI_API_KEY` env var / config file.
+
+> **Note:** the desktop app does **not** read a `.env` file. A GUI app launched
+> from Finder/Dock also has no shell environment, so the key must come from the
+> keyring, the config file (`~/.config/aibreak/config.toml`), or an exported
+> `OPENAI_API_KEY`/`GEMINI_API_KEY` env var.
 
 ## Configuration
 
@@ -99,7 +105,9 @@ Precedence: **flags > env vars > config file > defaults**.
 |---------------|---------------------------|----------------------|
 | LLM provider  | `AIBREAK_LLM_PROVIDER`    | `openai`             |
 | API key       | `OPENAI_API_KEY`          | —                    |
+| Gemini API key| `GEMINI_API_KEY`          | —                    |
 | Model         | `AIBREAK_LLM_MODEL`       | `gpt-4o-mini`        |
+| Gemini model  | `AIBREAK_GEMINI_MODEL`    | `gemini-3.8-flash`   |
 | Temperature   | `AIBREAK_LLM_TEMPERATURE` | `0`                  |
 | Max tokens    | `AIBREAK_LLM_MAX_TOKENS`  | `512`                |
 | Timeout       | `AIBREAK_LLM_TIMEOUT`     | `60s`                |
