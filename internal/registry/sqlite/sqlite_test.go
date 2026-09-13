@@ -396,3 +396,74 @@ func TestProviderKeys(t *testing.T) {
 	_, err = s.GetProviderKey(ctx, k1.ID)
 	assert.ErrorIs(t, err, registry.ErrNotFound)
 }
+
+// TestMigrationV3ToV4 builds a v3 database with a semver persona version, then
+// opens it through the real path to verify v4 converts version TEXT -> INTEGER.
+func TestMigrationV3ToV4(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v3.db")
+
+	db, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+		version INTEGER PRIMARY KEY,
+		applied_at TEXT NOT NULL
+	)`)
+	require.NoError(t, err)
+	for i, m := range []string{migrations[0], migrations[1], migrations[2]} {
+		_, err = db.Exec(m)
+		require.NoError(t, err)
+		_, err = db.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`,
+			i+1, now().Format(time.RFC3339))
+		require.NoError(t, err)
+	}
+	_, err = db.Exec(`INSERT INTO personas (id, name, system_prompt, weight, version, created_at) VALUES (?, ?, ?, ?, ?, ?)`,
+		"custom", "Custom", "p", 1.0, "1.0.0", now().Format(time.RFC3339))
+	require.NoError(t, err)
+	require.NoError(t, db.Close())
+
+	s, err := Open(path)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+		require.NoError(t, os.Remove(path))
+	}()
+
+	p, err := s.GetPersona(context.Background(), "custom")
+	require.NoError(t, err)
+	assert.Equal(t, 1, p.Version, "semver '1.0.0' migrated to integer 1")
+}
+
+// TestMigrationV4ToV5 builds a v4 database, then opens it through the real
+// path to verify v5 creates the provider_keys table.
+func TestMigrationV4ToV5(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "v4.db")
+
+	db, err := sql.Open("sqlite", path)
+	require.NoError(t, err)
+
+	_, err = db.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (
+		version INTEGER PRIMARY KEY,
+		applied_at TEXT NOT NULL
+	)`)
+	require.NoError(t, err)
+	for i, m := range []string{migrations[0], migrations[1], migrations[2], migrations[3]} {
+		_, err = db.Exec(m)
+		require.NoError(t, err)
+		_, err = db.Exec(`INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)`,
+			i+1, now().Format(time.RFC3339))
+		require.NoError(t, err)
+	}
+	require.NoError(t, db.Close())
+
+	s, err := Open(path)
+	require.NoError(t, err)
+	defer func() {
+		require.NoError(t, s.Close())
+		require.NoError(t, os.Remove(path))
+	}()
+
+	keys, err := s.ListProviderKeys(context.Background(), "openai")
+	require.NoError(t, err)
+	assert.Empty(t, keys)
+}

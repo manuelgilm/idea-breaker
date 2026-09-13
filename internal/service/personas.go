@@ -18,6 +18,9 @@ func (s *Service) CreatePersona(ctx context.Context, name, systemPrompt string, 
 	if weight < 0 {
 		return domain.Persona{}, fmt.Errorf("%w: weight must be >= 0", ErrValidation)
 	}
+	if weight == 0 {
+		weight = 1.0
+	}
 
 	p := domain.Persona{
 		ID:           newID(),

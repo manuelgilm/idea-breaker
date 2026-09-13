@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"aibreak/internal/domain"
 	"aibreak/internal/engine"
 	"aibreak/internal/llm"
 	"aibreak/internal/registry"
@@ -237,8 +238,7 @@ func TestResources(t *testing.T) {
 func TestProviderInfoAndAPIKeys(t *testing.T) {
 	app := newTestApp(t, scripted(nil))
 
-	info, err := app.GetProviderInfo()
-	require.NoError(t, err)
+	info := app.GetProviderInfo()
 	assert.Equal(t, "openai", info.Provider)
 	assert.Equal(t, "test-model", info.Model)
 
@@ -272,4 +272,31 @@ func TestProviderInfoAndAPIKeys(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, keys, 1)
 	assert.True(t, keys[0].IsDefault, "remaining key promoted to default")
+}
+
+// failAddKeyStore delegates to the embedded Store but fails AddProviderKey, to
+// exercise the desktop's keyring rollback path.
+type failAddKeyStore struct {
+	registry.Store
+}
+
+func (failAddKeyStore) AddProviderKey(ctx context.Context, k domain.APIKey) (domain.APIKey, error) {
+	return domain.APIKey{}, errors.New("boom")
+}
+
+func TestAddAPIKeyRollsBackSecretOnMetadataFailure(t *testing.T) {
+	store, err := sqlite.Open(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+
+	provider := fakeProvider{fn: func(ctx context.Context, req llm.Request) (llm.Response, error) {
+		return llm.Response{}, nil
+	}}
+	svc := service.New(failAddKeyStore{Store: store}, engine.New(provider))
+	mem := &memoryStore{kv: map[string]string{}}
+	app := New(svc, provider, WithSecretStore(mem))
+
+	_, err = app.AddAPIKey("label", "sk-abcdef1234")
+	require.Error(t, err)
+	assert.Empty(t, mem.kv, "secret is rolled back when metadata persistence fails")
 }

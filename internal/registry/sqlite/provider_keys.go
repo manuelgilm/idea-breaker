@@ -27,7 +27,7 @@ func (s *Store) GetProviderKey(ctx context.Context, id string) (domain.APIKey, e
 
 func (s *Store) ListProviderKeys(ctx context.Context, provider string) ([]domain.APIKey, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, provider, label, hint, is_default, created_at FROM provider_keys WHERE provider = ? ORDER BY created_at ASC`, provider)
+		`SELECT id, provider, label, hint, is_default, created_at FROM provider_keys WHERE provider = ? ORDER BY created_at ASC, id ASC`, provider)
 	if err != nil {
 		return nil, err
 	}

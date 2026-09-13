@@ -157,21 +157,26 @@ func (a *App) ListIdeaCards() ([]IdeaCard, error) {
 			Created: idea.Created,
 			Updated: idea.Updated,
 		}
-		if score := a.latestScore(idea.ID); score != nil {
-			card.Score = score
+		score, err := a.latestScore(idea.ID)
+		if err != nil {
+			return nil, err
 		}
+		card.Score = score
 		cards = append(cards, card)
 	}
 	return cards, nil
 }
 
-func (a *App) latestScore(ideaID string) *float64 {
+func (a *App) latestScore(ideaID string) (*float64, error) {
 	runs, err := a.svc.ListRuns(a.ctx, ideaID)
-	if err != nil || len(runs) == 0 {
-		return nil
+	if err != nil {
+		return nil, err
+	}
+	if len(runs) == 0 {
+		return nil, nil
 	}
 	total := runs[len(runs)-1].Total
-	return &total
+	return &total, nil
 }
 
 func (a *App) GetIdea(id string) (domain.Idea, error) {
@@ -278,8 +283,8 @@ func (a *App) AddFeedback(ideaID, author string, score int, rationale, aspect st
 
 // ---- Provider settings ----
 
-func (a *App) GetProviderInfo() (ProviderInfo, error) {
-	return ProviderInfo{Provider: providerName, Model: a.model}, nil
+func (a *App) GetProviderInfo() ProviderInfo {
+	return ProviderInfo{Provider: providerName, Model: a.model}
 }
 
 // ListAPIKeys returns the registered keys' metadata (secrets stay in the
@@ -306,6 +311,7 @@ func (a *App) AddAPIKey(label, key string) (domain.APIKey, error) {
 		Hint:     maskHint(key),
 	})
 	if err != nil {
+		_ = a.secrets.Delete(keyringService, account)
 		return domain.APIKey{}, err
 	}
 	if k.IsDefault {

@@ -183,6 +183,7 @@ func TestPersonas(t *testing.T) {
 	created := decode[domain.Persona](t, rec)
 	assert.NotEmpty(t, created.ID)
 	assert.Equal(t, 1, created.Version)
+	assert.Equal(t, 1.0, created.Weight, "omitted weight defaults to 1.0")
 }
 
 func TestUpdatePersona(t *testing.T) {

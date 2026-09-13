@@ -152,6 +152,10 @@ func TestCreatePersonaValidation(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 1, p.Version, "first version is 1")
 	assert.NotEmpty(t, p.ID, "id is generated")
+
+	zero, err := s.CreatePersona(ctx, "y", "p", 0)
+	require.NoError(t, err)
+	assert.Equal(t, 1.0, zero.Weight, "zero weight defaults to 1.0")
 }
 
 func TestAddFeedbackValidation(t *testing.T) {
@@ -214,6 +218,22 @@ func TestEvaluate(t *testing.T) {
 	require.Len(t, runs, 1)
 	assert.Equal(t, score.RunID, runs[0].RunID)
 	require.Len(t, runs[0].Breakdown, 2)
+}
+
+func TestEvaluateDedupsPersonaIDs(t *testing.T) {
+	ctx := context.Background()
+	s := newTestService(t, scripted(map[string]int{"a": 3}))
+
+	idea, _, err := s.CreateIdea(ctx, "X", "body", nil)
+	require.NoError(t, err)
+	a, err := s.CreatePersona(ctx, "a", "marker-a", 1)
+	require.NoError(t, err)
+
+	score, err := s.Evaluate(ctx, idea.ID, []string{a.ID, a.ID, a.ID}, false)
+	require.NoError(t, err)
+	assert.Equal(t, 1, score.Requested, "duplicate persona ids are evaluated once")
+	assert.Equal(t, 1, score.Responded)
+	require.Len(t, score.Breakdown, 1)
 }
 
 func TestEvaluateEdgeCases(t *testing.T) {
