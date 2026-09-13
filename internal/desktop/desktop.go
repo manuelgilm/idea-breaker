@@ -309,7 +309,7 @@ func (a *App) AddAPIKey(label, key string) (domain.APIKey, error) {
 		return domain.APIKey{}, err
 	}
 	if k.IsDefault {
-		a.applyDefault()
+		return k, a.applyDefault()
 	}
 	return k, nil
 }
@@ -321,8 +321,7 @@ func (a *App) DeleteAPIKey(id string) error {
 		return err
 	}
 	_ = a.secrets.Delete(keyringService, keyAccount(providerName, id))
-	a.applyDefault()
-	return nil
+	return a.applyDefault()
 }
 
 // SetDefaultAPIKey marks a key default and applies it to the running provider.
@@ -330,8 +329,7 @@ func (a *App) SetDefaultAPIKey(id string) error {
 	if err := a.svc.SetDefaultProviderKey(a.ctx, id); err != nil {
 		return err
 	}
-	a.applyDefault()
-	return nil
+	return a.applyDefault()
 }
 
 // ApplyDefaultKey applies the default key (if any) to the running provider. It
