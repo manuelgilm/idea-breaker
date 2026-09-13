@@ -246,6 +246,9 @@ Resolved product-spec decisions recorded here:
 - When synthesis is requested, it runs as a **single sequential call after the
   persona stage completes** (it consumes the aggregate, so it cannot run in
   parallel with it). The same per-call timeout applies.
+- The OpenAI provider's API key is **mutable at runtime** (`SetAPIKey`, used by
+  the desktop settings screen); access to it is synchronized (`sync.RWMutex`)
+  so a key update cannot race an in-flight `Complete`.
 
 ## 9. Testing strategy
 
@@ -253,7 +256,7 @@ Resolved product-spec decisions recorded here:
 |-----------|-------------|-------------------------------------------|
 | engine    | unit        | mocked `Provider`; table-driven; covers §3 scoring edge cases + synthesizer strict-parse, verdict enum, `inconclusive`-on-partial coverage, and spread values (incl. all-agree, single-success, failed-excluded) |
 | llm       | contract    | `httptest` fake server; 200/429/malformed |
-| registry  | integration | `:memory:` and temp-file SQLite; migrations idempotent (incl. v1→v2→v3→v4 upgrade path); cascade checks; `UpdatePersona` incl. built-in guard; `SaveRun`/`ListRuns` round-trip with `Spread` |
+| registry  | integration | `:memory:` and temp-file SQLite; migrations idempotent (incl. v1→v2→v3→v4→v5 upgrade path); cascade checks; `UpdatePersona` incl. built-in guard; `SaveRun`/`ListRuns` round-trip with `Spread` |
 | service   | unit        | fake `Store` + fake `Provider`            |
 | api       | integration | `httptest` against real handlers; error-code mapping |
 | cli       | golden/exit | run command func with buffers; assert output + exit code |
