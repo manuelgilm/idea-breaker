@@ -104,7 +104,7 @@ Precedence: **flags > env vars > config file > defaults**.
 | Max tokens    | `AIBREAK_LLM_MAX_TOKENS`  | `512`                |
 | Timeout       | `AIBREAK_LLM_TIMEOUT`     | `60s`                |
 | Retries       | `AIBREAK_LLM_RETRIES`     | `1`                  |
-| DB path       | `AIBREAK_DB`              | `aibreak.db`         |
+| DB path       | `AIBREAK_DB`              | `<user config dir>/aibreak/aibreak.db` |
 | API address   | `AIBREAK_ADDR`            | `127.0.0.1:8080`     |
 
 Optional TOML config file at `$AIBREAK_CONFIG` or
