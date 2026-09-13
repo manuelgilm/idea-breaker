@@ -70,7 +70,7 @@ gain an `OwnerID` field; it is intentionally omitted from v1.
 | `ID`           | string  | Generated ULID for custom personas; built-ins keep stable slugs (`skeptic`, `optimist`, `engineer`) |
 | `Name`         | string  | Display name                                     |
 | `SystemPrompt` | string  | Instruction set defining the perspective (should include 0–5 rubric anchors; see §3) |
-| `Weight`       | float   | Default 1.0 (a zero weight is normalized to 1.0 on creation); used in the aggregate score |
+| `Weight`       | float   | Default 1.0 (a zero weight is normalized to 1.0); used in the aggregate score |
 | `Version`      | int     | Auto-incremented (1, 2, 3, …) on every edit; captured by evaluations |
 | `Created`      | time    | Set on creation                                  |
 
@@ -298,6 +298,10 @@ test.
 - **Given** a `Name` or `SystemPrompt` provided as empty, **When**
   `UpdatePersona` is called, **Then** it returns a validation error.
 - **Given** a `Weight` provided as negative, **When** `UpdatePersona` is
+  called, **Then** it returns a validation error.
+- **Given** a `Weight` provided as `0`, **When** `UpdatePersona` is called,
+  **Then** the persona is stored with `Weight` `1.0` (the default).
+- **Given** no provided fields (an empty patch), **When** `UpdatePersona` is
   called, **Then** it returns a validation error.
 - **Given** a built-in persona id, **When** `UpdatePersona` is called, **Then**
   it returns a conflict error (built-ins are not editable).
