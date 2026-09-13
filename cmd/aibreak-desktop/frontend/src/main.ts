@@ -771,13 +771,8 @@ async function renderProvider(main: HTMLElement): Promise<void> {
 }
 
 async function loadProviderInfo(): Promise<void> {
-  try {
-    const info = await App.GetProviderInfo();
-    $("provider-status").textContent = `Provider: ${info.provider} · Model: ${info.model}`;
-  } catch (e) {
-    $("provider-status").textContent = "Could not load provider info.";
-    showError(String(e));
-  }
+  const info = await App.GetProviderInfo();
+  $("provider-status").textContent = `Provider: ${info.provider} · Model: ${info.model}`;
 }
 
 async function renderKeys(): Promise<void> {
