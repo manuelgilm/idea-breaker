@@ -101,6 +101,18 @@ func TestUpdatePersona(t *testing.T) {
 		assert.ErrorIs(t, err, ErrValidation)
 	})
 
+	t.Run("zero weight normalized to default", func(t *testing.T) {
+		zero := 0.0
+		p, err := s.UpdatePersona(ctx, created.ID, domain.PersonaPatch{Weight: &zero})
+		require.NoError(t, err)
+		assert.Equal(t, 1.0, p.Weight, "zero weight defaults to 1.0")
+	})
+
+	t.Run("empty patch rejected", func(t *testing.T) {
+		_, err := s.UpdatePersona(ctx, created.ID, domain.PersonaPatch{})
+		assert.ErrorIs(t, err, ErrValidation)
+	})
+
 	t.Run("built-in rejected", func(t *testing.T) {
 		prompt := "new prompt"
 		_, err := s.UpdatePersona(ctx, "skeptic", domain.PersonaPatch{SystemPrompt: &prompt})
