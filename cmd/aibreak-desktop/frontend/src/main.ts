@@ -7,11 +7,13 @@ const state: {
   ideaId: string;
   personas: PersonaView[];
   editingPersona: PersonaView | null;
+  expandedRun: string;
 } = {
   view: "ideas",
   ideaId: "",
   personas: [],
   editingPersona: null,
+  expandedRun: "",
 };
 
 const RESOURCE_KINDS = ["article", "repo", "paper", "video", "other"];
@@ -456,12 +458,7 @@ async function runEvaluate(): Promise<void> {
   }
 }
 
-function renderScore(score: FeasibilityScore): HTMLElement {
-  const root = el("div");
-  const total = el("div", "score-total " + scoreColor(score.total), score.total.toFixed(1));
-  root.appendChild(total);
-  root.appendChild(el("div", "hint", `${score.responded}/${score.requested} personas responded · spread ${score.spread.toFixed(1)}`));
-
+function renderBreakdown(score: FeasibilityScore): HTMLElement {
   const breakdown = el("div", "breakdown");
   for (const ev of score.breakdown) {
     const line = el("div", "eval-line");
@@ -472,7 +469,16 @@ function renderScore(score: FeasibilityScore): HTMLElement {
     }
     breakdown.appendChild(line);
   }
-  root.appendChild(breakdown);
+  return breakdown;
+}
+
+function renderScore(score: FeasibilityScore): HTMLElement {
+  const root = el("div");
+  const total = el("div", "score-total " + scoreColor(score.total), score.total.toFixed(1));
+  root.appendChild(total);
+  root.appendChild(el("div", "hint", `${score.responded}/${score.requested} personas responded · spread ${score.spread.toFixed(1)}`));
+
+  root.appendChild(renderBreakdown(score));
 
   if (score.verdict || score.summary) {
     const v = el("div", "verdict", score.verdict ? `Verdict: ${score.verdict}` : "");
@@ -499,10 +505,20 @@ async function renderHistory(): Promise<void> {
     }
     for (const r of runs) {
       const li = el("li");
-      const head = el("div", undefined, `Total ${r.total.toFixed(1)} · ${r.responded}/${r.requested} · spread ${r.spread.toFixed(1)}`);
-      li.appendChild(head);
-      if (r.verdict) li.appendChild(el("div", "meta", `Verdict: ${r.verdict}`));
-      if (r.summary) li.appendChild(el("div", "meta", r.summary));
+      const toggle = el("button", "run-toggle",
+        `Total ${r.total.toFixed(1)} · ${r.responded}/${r.requested} · spread ${r.spread.toFixed(1)}`);
+      toggle.type = "button";
+      toggle.addEventListener("click", () => {
+        state.expandedRun = state.expandedRun === r.run_id ? "" : r.run_id;
+        void renderHistory();
+      });
+      li.appendChild(toggle);
+
+      if (state.expandedRun === r.run_id) {
+        li.appendChild(renderBreakdown(r));
+        if (r.verdict) li.appendChild(el("div", "verdict", `Verdict: ${r.verdict}`));
+        if (r.summary) li.appendChild(el("div", "hint", r.summary));
+      }
       li.appendChild(el("div", "meta", formatDate(r.created)));
       list.appendChild(li);
     }
