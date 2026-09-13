@@ -66,7 +66,13 @@ aibreak/
 ├── Makefile
 ├── cmd/
 │   ├── aibreak/main.go        # CLI entrypoint
-│   └── aibreakd/main.go       # HTTP server entrypoint
+│   ├── aibreakd/main.go       # HTTP server entrypoint
+│   └── aibreak-desktop/main.go # desktop app entrypoint (Wails)
+├── frontend/                  # desktop UI: vanilla TS + minimal CSS
+│   ├── index.html
+│   ├── src/
+│   └── tsconfig.json
+├── wails.json                 # Wails project config
 └── internal/
     ├── domain/                # shared types (Idea, Persona, Evaluation, ...)
     ├── engine/                # pure evaluation + scoring (imports domain + llm)
@@ -75,6 +81,7 @@ aibreak/
     ├── registry/              # Store iface + sqlite/ impl + migrations/
     ├── cli/                   # cobra commands
     ├── api/                   # net/http handlers + router
+    ├── desktop/               # Wails bindings over service (thin adapter)
     └── config/                # config loading
 ```
 
@@ -91,6 +98,7 @@ aibreak/
 | Tests      | stdlib `testing` + `github.com/stretchr/testify` | Table-driven + assert/require.   |
 | Config     | stdlib + TOML (`github.com/BurntSushi/toml`) | Small surface; TOML for the file form. |
 | LLM client | plain `net/http`              | Avoid heavyweight SDK; the provider contract is small. |
+| Desktop    | Wails v2 + vanilla TS         | Native-feeling local app; Go backend binds `service` in-process, no HTTP hop. Vanilla TS + minimal CSS keeps the bundle tiny; `tsc --noEmit` is the frontend check. |
 
 No ORM, no web framework, no DI framework.
 
@@ -155,6 +163,13 @@ keeps the acyclic graph: `engine` imports `domain` + `llm`, `registry` imports
 in the engine aggregate alongside `Total`); the synthesizer prompt constant and
 the `Agreement(spread)` label helper live in `internal/engine`.
 
+**Desktop bindings** (`internal/desktop`): thin adapter over `service` exposing
+exactly the methods the product-spec §11 views need — `ListIdeas`, `GetIdea`,
+`Evaluate` (incl. persona selection + summary toggle), `ListRuns`,
+`ListFeedback`, `AddFeedback`. Same signatures and error semantics as the
+service; no new domain behavior. `cmd/aibreak-desktop/main.go` wires config →
+store → engine → service → bindings, mirroring `cmd/aibreak`/`cmd/aibreakd`.
+
 ## 6. Error model
 
 Typed errors in `service`, mapped to the API envelope codes (spec §8):
@@ -215,6 +230,7 @@ Resolved product-spec decisions recorded here:
 | service   | unit        | fake `Store` + fake `Provider`            |
 | api       | integration | `httptest` against real handlers; error-code mapping |
 | cli       | golden/exit | run command func with buffers; assert output + exit code |
+| desktop   | unit        | bound methods against in-memory store + fake provider, mirroring CLI/API test style; `tsc --noEmit` must pass on `frontend/` |
 
 Each acceptance criterion in the product spec maps 1:1 to a test.
 
@@ -227,5 +243,14 @@ Each acceptance criterion in the product spec maps 1:1 to a test.
 - `make lint` — `golangci-lint run`.
 - `make run-cli` / `make run-api` — dev run helpers.
 - `make fmt` — `gofmt` + `go mod tidy`.
+- `make desktop-dev` — `wails dev` (hot-reload frontend + Go backend).
+- `make desktop-build` — `wails build` (native binary for the host OS).
 
 CI (optional, later): `go test ./...` + `golangci-lint` on PR.
+
+**Desktop packaging.** Wails cannot cross-compile (it links the platform
+webview + CGO), so releases build natively per OS: the release workflow gains
+an OS matrix (ubuntu/macos/windows runners), each running `wails build`, and
+GoReleaser ships `aibreak-desktop` alongside the CLI/API binaries. Prereqs:
+Wails CLI + Node.js everywhere; webkit2gtk system deps on Linux CI runners
+(macOS WKWebView and Windows WebView2 are built-in).

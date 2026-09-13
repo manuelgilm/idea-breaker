@@ -6,11 +6,13 @@
 
 ## 1. Purpose
 
-aibreak is an AI-powered **idea evaluation engine** exposed through two
+aibreak is an AI-powered **idea evaluation engine** exposed through three
 front-ends:
 
 - a **CLI** (`aibreak`)
 - an **HTTP API** (`aibreakd`)
+- a **desktop app** (`aibreak-desktop`, Wails-based, see §11) — local,
+  single-user, same non-goals as v1 (no auth, no real-time collaboration)
 
 It is for **anyone evaluating an idea** — founders, product managers,
 students, researchers, hobbyists, or teams weighing a feature — not only
@@ -834,3 +836,45 @@ Sources, in priority order: flags > env vars > config file > defaults.
 - All external I/O (LLM, SQLite, HTTP) is behind interfaces for testability.
 - Cancellation: all engine/provider operations honor `context.Context`.
 - Logging: structured logging via `log/slog`.
+
+## 11. Desktop app (aibreak-desktop)
+
+`aibreak-desktop` is a local, single-user Wails desktop app. Its Go backend
+binds `internal/service` methods directly (in-process, no HTTP); see the
+technical spec for the binding contract. It introduces **no new domain
+behavior** — every view below maps to existing service methods (§4). The LLM
+API key comes from the existing configuration mechanisms (§9); there is no
+settings screen in this milestone.
+
+### Views (evaluate-first subset)
+
+- **Ideas list** — lists ideas (same ordering/filtering as `ListIdeas`).
+- **Idea detail + evaluate** — shows one idea; runs evaluation with optional
+  persona selection and an optional summary toggle (same semantics as CLI
+  `evaluate --personas/--summary`); displays total, spread, per-persona
+  breakdown, and verdict + summary when synthesized.
+- **History** — per-idea past runs with total, spread, and verdict (same data
+  as CLI `history`).
+- **Feedback** — lists an idea's feedback and adds new feedback (same fields
+  as CLI `feedback add`: author, score, rationale, aspect).
+
+### Acceptance criteria
+
+- **Given** registered ideas, **When** the ideas list view loads, **Then** it
+  shows every idea the service returns.
+- **Given** an idea and selected personas, **When** evaluation runs, **Then**
+  the results view shows the total, spread, breakdown, and — when synthesis
+  was requested — the verdict and summary.
+- **Given** an idea with past runs, **When** the history view loads, **Then**
+  it shows each run's total, spread, and verdict (when present).
+- **Given** valid author, score, and rationale, **When** feedback is submitted,
+  **Then** it is stored and appears in the feedback view.
+
+### Later UI versions (explicitly out of scope here)
+
+- Personas management (list/add/edit/delete) in the UI.
+- Resources management in the UI.
+- Registry edit/delete in the UI.
+- Settings screen (API key / provider / model configuration).
+- Anything requiring network exposure, auth, or multi-user support (still
+  deferred per §1).
