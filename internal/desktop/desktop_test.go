@@ -26,7 +26,7 @@ func (f fakeProvider) Complete(ctx context.Context, req llm.Request) (llm.Respon
 	return f.fn(ctx, req)
 }
 
-// SetAPIKey satisfies KeySetter; the fake ignores the key.
+// SetAPIKey satisfies llm.KeyedProvider; the fake ignores the key.
 func (f fakeProvider) SetAPIKey(string) {}
 
 // memoryStore is an in-memory SecretStore for tests.
@@ -72,10 +72,15 @@ func newTestApp(t *testing.T, provider llm.Provider) *App {
 	store, err := sqlite.Open(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
-	ks, _ := provider.(KeySetter)
-	return New(service.New(store, engine.New(provider)), ks,
+
+	kp := provider.(llm.KeyedProvider)
+	router := llm.NewSwitchable(
+		map[string]llm.KeyedProvider{"openai": kp, "gemini": kp},
+		map[string]string{"openai": "gpt-4o-mini", "gemini": "gemini-2.5-flash"},
+		"openai",
+	)
+	return New(service.New(store, engine.New(router)), router,
 		WithSecretStore(&memoryStore{kv: map[string]string{}}),
-		WithModel("test-model"),
 	)
 }
 
@@ -243,40 +248,57 @@ func TestResources(t *testing.T) {
 func TestProviderInfoAndAPIKeys(t *testing.T) {
 	app := newTestApp(t, scripted(nil))
 
-	info := app.GetProviderInfo()
-	assert.Equal(t, "openai", info.Provider)
-	assert.Equal(t, "test-model", info.Model)
+	infos := app.GetProviders()
+	require.Len(t, infos, 2)
+	// Names are sorted: gemini, openai. Active starts at openai.
+	assert.Equal(t, "gemini", infos[0].Name)
+	assert.Equal(t, "gemini-2.5-flash", infos[0].Model)
+	assert.False(t, infos[0].Active)
+	assert.Equal(t, "openai", infos[1].Name)
+	assert.Equal(t, "gpt-4o-mini", infos[1].Model)
+	assert.True(t, infos[1].Active)
 
-	keys, err := app.ListAPIKeys()
+	keys, err := app.ListAPIKeys("openai")
 	require.NoError(t, err)
 	require.Empty(t, keys)
 
-	k1, err := app.AddAPIKey("work", "sk-abc1234567")
+	k1, err := app.AddAPIKey("openai", "work", "sk-abc1234567")
 	require.NoError(t, err)
 	assert.True(t, k1.IsDefault, "first key is default")
 	assert.Equal(t, "••••4567", k1.Hint)
 	assert.Equal(t, "work", k1.Label)
 
-	k2, err := app.AddAPIKey("personal", "sk-zzz9876543")
+	k2, err := app.AddAPIKey("openai", "personal", "sk-zzz9876543")
 	require.NoError(t, err)
 	assert.False(t, k2.IsDefault)
 
-	keys, err = app.ListAPIKeys()
+	keys, err = app.ListAPIKeys("openai")
 	require.NoError(t, err)
 	require.Len(t, keys, 2)
 
 	require.NoError(t, app.SetDefaultAPIKey(k2.ID))
-	keys, err = app.ListAPIKeys()
+	keys, err = app.ListAPIKeys("openai")
 	require.NoError(t, err)
 	for _, k := range keys {
 		assert.Equal(t, k.ID == k2.ID, k.IsDefault, "only the selected key is default")
 	}
 
 	require.NoError(t, app.DeleteAPIKey(k2.ID))
-	keys, err = app.ListAPIKeys()
+	keys, err = app.ListAPIKeys("openai")
 	require.NoError(t, err)
 	require.Len(t, keys, 1)
 	assert.True(t, keys[0].IsDefault, "remaining key promoted to default")
+}
+
+func TestSetActiveProvider(t *testing.T) {
+	app := newTestApp(t, scripted(nil))
+
+	require.NoError(t, app.SetActiveProvider("gemini"))
+	for _, info := range app.GetProviders() {
+		assert.Equal(t, info.Name == "gemini", info.Active)
+	}
+
+	require.Error(t, app.SetActiveProvider("nope"))
 }
 
 // failAddKeyStore delegates to the embedded Store but fails AddProviderKey, to
@@ -297,11 +319,104 @@ func TestAddAPIKeyRollsBackSecretOnMetadataFailure(t *testing.T) {
 	provider := fakeProvider{fn: func(ctx context.Context, req llm.Request) (llm.Response, error) {
 		return llm.Response{}, nil
 	}}
-	svc := service.New(failAddKeyStore{Store: store}, engine.New(provider))
+	router := llm.NewSwitchable(
+		map[string]llm.KeyedProvider{"openai": provider},
+		map[string]string{"openai": "gpt-4o-mini"},
+		"openai",
+	)
+	svc := service.New(failAddKeyStore{Store: store}, engine.New(router))
 	mem := &memoryStore{kv: map[string]string{}}
-	app := New(svc, provider, WithSecretStore(mem))
+	app := New(svc, router, WithSecretStore(mem))
 
-	_, err = app.AddAPIKey("label", "sk-abcdef1234")
+	_, err = app.AddAPIKey("openai", "label", "sk-abcdef1234")
 	require.Error(t, err)
 	assert.Empty(t, mem.kv, "secret is rolled back when metadata persistence fails")
+}
+
+// recordingKeyProvider records the key set via SetAPIKey.
+type recordingKeyProvider struct {
+	key string
+}
+
+func (r *recordingKeyProvider) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
+	return llm.Response{}, nil
+}
+
+func (r *recordingKeyProvider) SetAPIKey(key string) { r.key = key }
+
+func TestApplyDefaultKeyKeepsFallback(t *testing.T) {
+	store, err := sqlite.Open(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+
+	kp := &recordingKeyProvider{key: "config-key"}
+	router := llm.NewSwitchable(
+		map[string]llm.KeyedProvider{"openai": kp},
+		map[string]string{"openai": "gpt-4o-mini"},
+		"openai",
+	)
+	svc := service.New(store, engine.New(router))
+	app := New(svc, router,
+		WithSecretStore(&memoryStore{kv: map[string]string{}}),
+		WithFallbackKeys(map[string]string{"openai": "config-key"}),
+	)
+
+	require.NoError(t, app.ApplyDefaultKey())
+	assert.Equal(t, "config-key", kp.key, "no keyring default keeps the config/env fallback key")
+}
+
+func TestGetProvidersHasKey(t *testing.T) {
+	app := newTestApp(t, scripted(nil))
+	for _, info := range app.GetProviders() {
+		assert.False(t, info.HasKey, "no fallback and no keyring key")
+	}
+
+	store, err := sqlite.Open(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+	router := llm.NewSwitchable(
+		map[string]llm.KeyedProvider{"openai": &recordingKeyProvider{}},
+		map[string]string{"openai": "gpt-4o-mini"},
+		"openai",
+	)
+	app2 := New(service.New(store, engine.New(router)), router,
+		WithSecretStore(&memoryStore{kv: map[string]string{}}),
+		WithFallbackKeys(map[string]string{"openai": "sk-fallback"}),
+	)
+	for _, info := range app2.GetProviders() {
+		if info.Name == "openai" {
+			assert.True(t, info.HasKey, "fallback key counts as configured")
+		}
+	}
+}
+
+func TestApplySettingsRestoresPersisted(t *testing.T) {
+	store, err := sqlite.Open(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+
+	newRouter := func() *llm.Switchable {
+		return llm.NewSwitchable(
+			map[string]llm.KeyedProvider{"openai": &recordingKeyProvider{}, "gemini": &recordingKeyProvider{}},
+			map[string]string{"openai": "gpt-4o-mini", "gemini": "gemini-3.8-flash"},
+			"openai",
+		)
+	}
+
+	router1 := newRouter()
+	app1 := New(service.New(store, engine.New(router1)), router1,
+		WithSecretStore(&memoryStore{kv: map[string]string{}}))
+
+	require.NoError(t, app1.SaveModel("openai", "gpt-4o"))
+	require.NoError(t, app1.SetActiveProvider("gemini"))
+
+	// Simulate a restart: a fresh router + app over the same store.
+	router2 := newRouter()
+	app2 := New(service.New(store, engine.New(router2)), router2,
+		WithSecretStore(&memoryStore{kv: map[string]string{}}))
+
+	require.NoError(t, app2.ApplySettings())
+	assert.Equal(t, "gemini", router2.Active(), "active provider restored")
+	assert.Equal(t, "gpt-4o", router2.Model("openai"), "model restored")
+	assert.Equal(t, "gemini-3.8-flash", router2.Model("gemini"), "untouched model keeps default")
 }

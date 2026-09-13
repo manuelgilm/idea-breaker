@@ -83,8 +83,10 @@ interface PersonaView {
 }
 
 interface ProviderInfo {
-  provider: string;
+  name: string;
   model: string;
+  active: boolean;
+  hasKey: boolean;
 }
 
 interface APIKey {
@@ -124,9 +126,11 @@ interface Window {
         AddFeedback(ideaID: string, author: string, score: number, rationale: string, aspect: string): Promise<Feedback>;
         DeleteFeedback(id: string): Promise<void>;
         // provider
-        GetProviderInfo(): Promise<ProviderInfo>;
-        ListAPIKeys(): Promise<APIKey[]>;
-        AddAPIKey(label: string, key: string): Promise<APIKey>;
+        GetProviders(): Promise<ProviderInfo[]>;
+        SetActiveProvider(name: string): Promise<void>;
+        SaveModel(provider: string, model: string): Promise<void>;
+        ListAPIKeys(provider: string): Promise<APIKey[]>;
+        AddAPIKey(provider: string, label: string, key: string): Promise<APIKey>;
         DeleteAPIKey(id: string): Promise<void>;
         SetDefaultAPIKey(id: string): Promise<void>;
       };

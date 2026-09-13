@@ -140,7 +140,7 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return llm.Response{}, llm.ErrAuth
 	default:
-		return llm.Response{}, fmt.Errorf("%w: status %d", llm.ErrProvider, resp.StatusCode)
+		return llm.Response{}, fmt.Errorf("%w: status %d: %s", llm.ErrProvider, resp.StatusCode, truncateBody(respBody))
 	}
 
 	var parsed completionResponse
@@ -155,4 +155,13 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 	}
 
 	return llm.Response{Content: parsed.Choices[0].Message.Content}, nil
+}
+
+// truncateBody returns a bounded copy of the response body for error messages.
+func truncateBody(b []byte) string {
+	const max = 300
+	if len(b) <= max {
+		return string(b)
+	}
+	return string(b[:max]) + "…"
 }

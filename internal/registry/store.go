@@ -49,4 +49,7 @@ type Store interface {
 	DeleteProviderKey(ctx context.Context, id string) error
 	SetDefaultProviderKey(ctx context.Context, id string) error
 	GetDefaultProviderKey(ctx context.Context, provider string) (domain.APIKey, error)
+
+	GetSetting(ctx context.Context, key string) (string, error)
+	SetSetting(ctx context.Context, key, value string) error
 }

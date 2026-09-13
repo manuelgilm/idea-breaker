@@ -115,6 +115,9 @@ func (e *Evaluator) Evaluate(ctx context.Context, idea domain.Idea, personas []d
 
 	score, err := e.aggregate(runID, now, idea.ID, results)
 	if err != nil {
+		if errors.Is(err, ErrNoResults) {
+			return domain.FeasibilityScore{}, fmt.Errorf("%w: %s", err, failureSummary(results))
+		}
 		return domain.FeasibilityScore{}, err
 	}
 
@@ -288,6 +291,30 @@ func userMessage(idea domain.Idea) string {
 		return idea.Title
 	}
 	return idea.Title + "\n\n" + idea.Body
+}
+
+// failureSummary renders the failed personas' reasons (e.g. "skeptic: llm: auth
+// failure; optimist: llm: auth failure") for the all-fail error.
+func failureSummary(results []domain.Evaluation) string {
+	var b strings.Builder
+	first := true
+	for _, ev := range results {
+		if ev.Status != domain.StatusFailed {
+			continue
+		}
+		if !first {
+			b.WriteString("; ")
+		}
+		first = false
+		b.WriteString(ev.PersonaID)
+		b.WriteString(": ")
+		if ev.Error != "" {
+			b.WriteString(ev.Error)
+		} else {
+			b.WriteString("unknown error")
+		}
+	}
+	return b.String()
 }
 
 // Agreement maps a spread value (0–5) to its interpretation label, per the

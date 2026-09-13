@@ -121,7 +121,7 @@ function renderApp(): void {
         <button class="nav-item" data-view="ideas">Ideas</button>
         <button class="nav-item" data-view="personas">Personas</button>
         <div class="group-label">LLM Provider</div>
-        <button class="nav-item" data-view="provider">OpenAI</button>
+        <div id="provider-nav"></div>
       </aside>
       <main class="main" id="main"></main>
     </div>
@@ -138,11 +138,12 @@ function renderApp(): void {
     });
   });
 
+  void loadProviderNav();
   void renderView();
 }
 
 function markActive(): void {
-  document.querySelectorAll<HTMLButtonElement>(".nav-item").forEach((btn) => {
+  document.querySelectorAll<HTMLButtonElement>(".nav-item[data-view]").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.view === state.view);
   });
 }
@@ -327,6 +328,7 @@ async function renderDetail(main: HTMLElement): Promise<void> {
 
     <div class="panel">
       <h3>Evaluate</h3>
+      <div id="evaluate-provider" class="hint"></div>
       <div class="checkbox-row" id="persona-checks"></div>
       <div class="row" style="margin-top: 10px;">
         <label style="margin:0; display:flex; align-items:center; gap:6px; color: var(--text);">
@@ -395,6 +397,34 @@ async function renderDetail(main: HTMLElement): Promise<void> {
   }
 
   await Promise.all([loadPersonas(), renderPersonaChecks(), renderResources(), renderHistory(), renderFeedback()]);
+  await renderEvaluateProvider();
+}
+
+function activeProviderInfo(): ProviderInfo | undefined {
+  return providerInfos.find((p) => p.active);
+}
+
+async function renderEvaluateProvider(): Promise<void> {
+  const el = document.getElementById("evaluate-provider");
+  if (!el) return;
+  if (providerInfos.length === 0) {
+    await loadProviderNav();
+  }
+  const info = activeProviderInfo();
+  const btn = document.getElementById("evaluate-btn") as HTMLButtonElement | null;
+  if (!info) {
+    el.textContent = "";
+    return;
+  }
+  if (info.hasKey) {
+    el.textContent = `Provider: ${providerLabel(info.name)} · Model: ${info.model}`;
+    el.classList.remove("error-banner");
+    if (btn) btn.disabled = false;
+  } else {
+    el.textContent = `Provider: ${providerLabel(info.name)} — no API key configured. Add one in the ${providerLabel(info.name)} settings.`;
+    el.classList.add("error-banner");
+    if (btn) btn.disabled = true;
+  }
 }
 
 async function saveIdea(): Promise<void> {
@@ -467,6 +497,10 @@ async function runEvaluate(): Promise<void> {
   } catch (e) {
     clear(out);
     showError(String(e));
+    const info = activeProviderInfo();
+    if (info && !info.hasKey) {
+      showError(`Evaluation failed: the active provider (${providerLabel(info.name)}) has no API key configured. Add one in the ${providerLabel(info.name)} settings.`);
+    }
   }
 }
 
@@ -786,15 +820,75 @@ async function deletePersona(id: string): Promise<void> {
 // Provider
 // ---------------------------------------------------------------------------
 
+let providerInfos: ProviderInfo[] = [];
+let activeProvider = "";
+
+const MODEL_SUGGESTIONS: Record<string, string[]> = {
+  openai: ["gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", "o3-mini", "o1"],
+  gemini: ["gemini-3.8-flash", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.0-flash", "gemini-1.5-flash"],
+};
+
+// loadProviderNav fetches the supported providers and renders one sidebar entry
+// per provider (the active one highlighted).
+async function loadProviderNav(): Promise<void> {
+  try {
+    providerInfos = await App.GetProviders();
+    for (const info of providerInfos) {
+      if (info.active) activeProvider = info.name;
+    }
+  } catch (e) {
+    showError(String(e));
+    providerInfos = [];
+    return;
+  }
+
+  const nav = document.getElementById("provider-nav");
+  if (!nav) return;
+  clear(nav);
+  for (const info of providerInfos) {
+    const btn = el("button", "nav-item", providerLabel(info.name));
+    if (info.active) btn.classList.add("active");
+    btn.addEventListener("click", () => void selectProvider(info.name));
+    nav.appendChild(btn);
+  }
+}
+
+function providerLabel(name: string): string {
+  return name.charAt(0).toUpperCase() + name.slice(1);
+}
+
+async function selectProvider(name: string): Promise<void> {
+  try {
+    await App.SetActiveProvider(name);
+    activeProvider = name;
+    showSuccess(`Switched to ${name}.`);
+    state.view = "provider";
+    await loadProviderNav();
+    await renderView();
+  } catch (e) {
+    showError(String(e));
+  }
+}
+
 async function renderProvider(main: HTMLElement): Promise<void> {
+  if (providerInfos.length === 0) {
+    await loadProviderNav();
+  }
   main.innerHTML = `
     <h2>LLM Provider</h2>
     <div class="panel">
-      <h3>OpenAI</h3>
-      <div class="hint" id="provider-status">Loading…</div>
+      <h3 id="provider-name"></h3>
+      <div class="field">
+        <label>Model</label>
+        <input id="model-input" type="text" list="model-suggestions" />
+        <datalist id="model-suggestions"></datalist>
+      </div>
+      <div class="row">
+        <button id="model-save" class="primary">Save model</button>
+      </div>
     </div>
     <div class="panel">
-      <h3>API keys</h3>
+      <h3 id="keys-title">API keys</h3>
       <ul id="keys-list" class="list"></ul>
       <div class="row" style="margin-top: 10px;">
         <input id="key-label" type="text" placeholder="label (optional)" style="flex:1;" />
@@ -807,20 +901,58 @@ async function renderProvider(main: HTMLElement): Promise<void> {
     </div>
   `;
   $("key-add").addEventListener("click", () => void addAPIKey());
-  await loadProviderInfo();
+  $("model-save").addEventListener("click", () => void saveModel());
+  updateProviderStatus();
   await renderKeys();
 }
 
-async function loadProviderInfo(): Promise<void> {
-  const info = await App.GetProviderInfo();
-  $("provider-status").textContent = `Provider: ${info.provider} · Model: ${info.model}`;
+function activeModel(): string {
+  for (const info of providerInfos) {
+    if (info.name === activeProvider) return info.model;
+  }
+  return "";
+}
+
+function updateProviderStatus(): void {
+  $("provider-name").textContent = providerLabel(activeProvider);
+
+  const input = document.getElementById("model-input") as HTMLInputElement | null;
+  if (input) input.value = activeModel();
+
+  const dl = document.getElementById("model-suggestions") as HTMLDataListElement | null;
+  if (dl) {
+    clear(dl);
+    for (const m of MODEL_SUGGESTIONS[activeProvider] || []) {
+      const opt = document.createElement("option");
+      opt.value = m;
+      dl.appendChild(opt);
+    }
+  }
+
+  $("keys-title").textContent = `API keys — ${providerLabel(activeProvider)}`;
+}
+
+async function saveModel(): Promise<void> {
+  const model = inputValue("model-input").trim();
+  if (!model) {
+    showError("Model is required.");
+    return;
+  }
+  try {
+    await App.SaveModel(activeProvider, model);
+    showSuccess("Model saved.");
+    await loadProviderNav();
+    updateProviderStatus();
+  } catch (e) {
+    showError(String(e));
+  }
 }
 
 async function renderKeys(): Promise<void> {
   const list = $("keys-list");
   clear(list);
   try {
-    const keys = await App.ListAPIKeys();
+    const keys = await App.ListAPIKeys(activeProvider);
     if (keys.length === 0) {
       list.appendChild(el("li", "meta", "No API keys registered."));
       return;
@@ -860,7 +992,7 @@ async function addAPIKey(): Promise<void> {
     return;
   }
   try {
-    await App.AddAPIKey(label, key);
+    await App.AddAPIKey(activeProvider, label, key);
     (document.getElementById("key-label") as HTMLInputElement).value = "";
     (document.getElementById("key-value") as HTMLInputElement).value = "";
     showSuccess("API key added.");

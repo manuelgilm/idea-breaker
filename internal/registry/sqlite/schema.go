@@ -124,6 +124,14 @@ CREATE TABLE provider_keys (
     created_at TEXT NOT NULL
 );
 `,
+	// v6: key-value application settings (active provider, per-provider models,
+	// prices, etc.).
+	`
+CREATE TABLE settings (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+`,
 }
 
 // builtinPersonas are seeded on first run and are not deletable.

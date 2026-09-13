@@ -18,6 +18,7 @@ type Config struct {
 	APIKey       string
 	GeminiAPIKey string
 	Model        string
+	GeminiModel  string
 	Temperature  float64
 	MaxTokens    int
 	Timeout      time.Duration
@@ -31,6 +32,7 @@ func Defaults() Config {
 	return Config{
 		LLMProvider: "openai",
 		Model:       "gpt-4o-mini",
+		GeminiModel: "gemini-3.8-flash",
 		Temperature: 0,
 		MaxTokens:   512,
 		Timeout:     60 * time.Second,
@@ -57,6 +59,7 @@ type fileConfig struct {
 	APIKey       *string  `toml:"api_key"`
 	GeminiAPIKey *string  `toml:"gemini_api_key"`
 	Model        *string  `toml:"model"`
+	GeminiModel  *string  `toml:"gemini_model"`
 	Temperature  *float64 `toml:"temperature"`
 	MaxTokens    *int     `toml:"max_tokens"`
 	Timeout      *string  `toml:"timeout"`
@@ -119,6 +122,9 @@ func loadFile(cfg *Config) error {
 	if fc.Model != nil {
 		cfg.Model = *fc.Model
 	}
+	if fc.GeminiModel != nil {
+		cfg.GeminiModel = *fc.GeminiModel
+	}
 	if fc.Temperature != nil {
 		cfg.Temperature = *fc.Temperature
 	}
@@ -176,6 +182,7 @@ func loadEnv(cfg *Config) error {
 	setStr("OPENAI_API_KEY", &cfg.APIKey)
 	setStr("GEMINI_API_KEY", &cfg.GeminiAPIKey)
 	setStr("AIBREAK_LLM_MODEL", &cfg.Model)
+	setStr("AIBREAK_GEMINI_MODEL", &cfg.GeminiModel)
 	setStr("AIBREAK_DB", &cfg.DBPath)
 	setStr("AIBREAK_ADDR", &cfg.Addr)
 

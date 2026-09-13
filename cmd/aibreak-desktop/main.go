@@ -26,14 +26,20 @@ func main() {
 		os.Exit(1)
 	}
 
-	svc, provider, store, err := app.Build(cfg)
+	svc, router, store, err := app.BuildDesktop(cfg)
 	if err != nil {
 		logger.Error("build", "err", err)
 		os.Exit(1)
 	}
 	defer store.Close()
 
-	appl := desktop.New(svc, provider, desktop.WithModel(cfg.Model))
+	appl := desktop.New(svc, router, desktop.WithFallbackKeys(map[string]string{
+		"openai": cfg.APIKey,
+		"gemini": cfg.GeminiAPIKey,
+	}))
+	if err := appl.ApplySettings(); err != nil {
+		logger.Warn("apply settings", "err", err)
+	}
 	if err := appl.ApplyDefaultKey(); err != nil {
 		logger.Warn("apply default api key", "err", err)
 	}

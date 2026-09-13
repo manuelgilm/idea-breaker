@@ -94,6 +94,8 @@ func TestEvaluateAggregates(t *testing.T) {
 		_, err := e.Evaluate(context.Background(), idea(),
 			[]domain.Persona{persona("a", 1), persona("b", 1)}, false)
 		assert.ErrorIs(t, err, ErrNoResults)
+		assert.Contains(t, err.Error(), "a: llm: auth failure")
+		assert.Contains(t, err.Error(), "b: llm: provider failure")
 	})
 
 	t.Run("all successful personas zero weight", func(t *testing.T) {
