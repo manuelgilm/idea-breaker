@@ -96,10 +96,11 @@ aibreak/
 | HTTP       | stdlib `net/http` (1.22 `ServeMux`) | No framework needed for a small API; method+path patterns cover §8. |
 | SQLite     | `modernc.org/sqlite`          | Pure Go (no CGO), easy cross-compile, `database/sql` compatible. |
 | Migrations | embedded SQL, applied on open | Simple, versioned-in-repo; no external tool.           |
-| ULID       | `github.com/oklog/ulid/v2`    | Time-ordered IDs for `Idea.ID`, `RunID`, etc.          |
+| ULID       | `github.com/oklog/ulid/v2`    | Time-ordered IDs for `Idea.ID`, `RunID`, and custom persona IDs. |
 | Logging    | stdlib `log/slog`             | Structured, no dep; spec §10 requirement.              |
 | Tests      | stdlib `testing` + `github.com/stretchr/testify` | Table-driven + assert/require.   |
 | Config     | stdlib + TOML (`github.com/BurntSushi/toml`) | Small surface; TOML for the file form. |
+| Keyring    | `github.com/zalando/go-keyring` | OS credential store for the desktop OpenAI API key (Secret Service/Keychain/Credential Manager). |
 | LLM client | plain `net/http`              | Avoid heavyweight SDK; the provider contract is small. |
 | Desktop    | Wails v2 + vanilla TS         | Native-feeling local app; Go backend binds `service` in-process, no HTTP hop. Vanilla TS + minimal CSS keeps the bundle tiny; `tsc --noEmit` is the frontend check. |
 
@@ -167,11 +168,26 @@ in the engine aggregate alongside `Total`); the synthesizer prompt constant and
 the `Agreement(spread)` label helper live in `internal/engine`.
 
 **Desktop bindings** (`internal/desktop`): thin adapter over `service` exposing
-exactly the methods the product-spec §11 views need — `ListIdeas`, `GetIdea`,
-`Evaluate` (incl. persona selection + summary toggle), `ListRuns`,
-`ListFeedback`, `AddFeedback`. Same signatures and error semantics as the
-service; no new domain behavior. `cmd/aibreak-desktop/main.go` wires config →
-store → engine → service → bindings, mirroring `cmd/aibreak`/`cmd/aibreakd`.
+the product-spec §11 views — `ListIdeas` (with per-idea latest score),
+`GetIdea`, `CreateIdea`, `UpdateIdea`, `DeleteIdea`, `Evaluate` (incl. persona
+selection + summary toggle), `ListRuns`, `ListFeedback`, `AddFeedback`,
+`ListResources`, `AddResource`, `DeleteResource`, `ListPersonas` (with a
+built-in flag), `CreatePersona`, `UpdatePersona`, `DeletePersona`, and the
+provider-key settings (`GetProviderInfo`, `ListAPIKeys`, `AddAPIKey`,
+`DeleteAPIKey`, `SetDefaultAPIKey`, `ApplyDefaultKey`). Same error semantics as
+the service; no new domain behavior.
+
+Wails does **not** inject `context.Context` into bound methods — it treats it as
+a regular parameter, so the adapter holds a background `context.Context`
+(initialized at construction) and passes it to the service internally; bound
+methods never expose `context.Context`. The adapter also holds the concrete
+`llm.Provider` (behind a narrow `KeySetter` interface) so the provider view can
+swap the API key in place, and a `SecretStore` interface (default
+`go-keyring`; faked in tests) for key persistence. Each key's secret lives in
+the keyring under account `<provider>:<keyID>`; the adapter generates the key
+ID (ULID) and orchestrates secret + metadata. `app.Build` returns the provider
+alongside the service and store so the composition root can hand it to the
+adapter.
 
 ## 6. Error model
 
@@ -205,8 +221,16 @@ Precedence (spec §9): **flags > env vars > config file > defaults**.
   by `cmd/*`.
 
 Resolved product-spec decisions recorded here:
-- `Idea.ID` (and all generated IDs) are **ULIDs**.
-- Persona `--version` default is **`1.0.0`**.
+- `Idea.ID` (and all generated IDs) are **ULIDs**; custom personas get generated
+  ULID IDs (built-ins keep their fixed slugs).
+- Persona `Version` is an **auto-incrementing integer** (`1, 2, 3, …`), bumped
+  by the service on every `UpdatePersona`; callers never supply it.
+- The desktop app stores API key **secrets** in the OS keyring (service
+  `aibreak`, account `<provider>:<keyID>`); key metadata lives in the
+  `provider_keys` table. `internal/desktop` wraps `go-keyring` behind a
+  `SecretStore` interface so tests can fake it. On Linux a running Secret
+  Service (gnome-keyring/KWallet) is required; if absent, `AddAPIKey` returns an
+  error and the app falls back to the `OPENAI_API_KEY` env var / config file.
 
 ## 8. Concurrency & context
 
@@ -229,11 +253,11 @@ Resolved product-spec decisions recorded here:
 |-----------|-------------|-------------------------------------------|
 | engine    | unit        | mocked `Provider`; table-driven; covers §3 scoring edge cases + synthesizer strict-parse, verdict enum, `inconclusive`-on-partial coverage, and spread values (incl. all-agree, single-success, failed-excluded) |
 | llm       | contract    | `httptest` fake server; 200/429/malformed |
-| registry  | integration | `:memory:` and temp-file SQLite; migrations idempotent (incl. v1→v2→v3 upgrade path); cascade checks; `UpdatePersona` incl. built-in guard; `SaveRun`/`ListRuns` round-trip with `Spread` |
+| registry  | integration | `:memory:` and temp-file SQLite; migrations idempotent (incl. v1→v2→v3→v4 upgrade path); cascade checks; `UpdatePersona` incl. built-in guard; `SaveRun`/`ListRuns` round-trip with `Spread` |
 | service   | unit        | fake `Store` + fake `Provider`            |
 | api       | integration | `httptest` against real handlers; error-code mapping |
 | cli       | golden/exit | run command func with buffers; assert output + exit code |
-| desktop   | unit        | bound methods against in-memory store + fake provider, mirroring CLI/API test style; `tsc --noEmit` must pass on `frontend/` |
+| desktop   | unit        | bound methods against in-memory store + fake provider + fake `SecretStore`, mirroring CLI/API test style; `tsc --noEmit` must pass on `frontend/` |
 
 Each acceptance criterion in the product spec maps 1:1 to a test.
 
