@@ -1,8 +1,9 @@
 # aibreak
 
-AI-powered idea evaluation engine — a CLI (`aibreak`) and an HTTP API
-(`aibreakd`) that critique an idea from multiple AI personas, score it on a
-0–5 scale, and aggregate those into a single feasibility score (0–100).
+AI-powered idea evaluation engine — a CLI (`aibreak`), an HTTP API
+(`aibreakd`), and a desktop app (`aibreak-desktop`) that critique an idea from
+multiple AI personas, score it on a 0–5 scale, and aggregate those into a single
+feasibility score (0–100).
 
 Specs (source of truth):
 
@@ -54,6 +55,42 @@ go run ./cmd/aibreak  <args...>
 go run ./cmd/aibreakd
 ```
 
+## Desktop app
+
+`aibreak-desktop` is a local, single-user Wails desktop app for managing ideas,
+evaluating them with AI personas, and managing your LLM API keys (stored in the
+OS keyring).
+
+### Install (prebuilt)
+
+Download the `aibreak-desktop` asset for your platform from
+[GitHub Releases](https://github.com/manuelgilm/idea-breaker/releases):
+
+- **Linux** — `aibreak-desktop-<version>-linux-amd64.tar.gz`; extract and run the
+  `aibreak-desktop` binary.
+- **macOS** — `aibreak-desktop-<version>-darwin-<arch>.zip` (Intel or Apple
+  Silicon); unzip and run `aibreak-desktop.app`.
+- **Windows** — `aibreak-desktop-<version>-windows-amd64.zip`; unzip and run
+  `aibreak-desktop.exe`.
+
+### Build from source
+
+Requires Go 1.22+, Node.js, and the [Wails](https://wails.io) CLI. On Linux also
+install the webview dev libraries:
+
+```sh
+# Ubuntu 24.04+
+sudo apt install libgtk-3-dev libwebkit2gtk-4.1-dev
+go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+make desktop-dev     # live-reload development
+make desktop-build   # native binary for the host OS
+```
+
+The desktop app stores API keys in the **OS keyring**. On Linux a running Secret
+Service (gnome-keyring/KWallet) is required; if absent, it falls back to the
+`OPENAI_API_KEY` env var / config file.
+
 ## Configuration
 
 Precedence: **flags > env vars > config file > defaults**.
@@ -98,8 +135,8 @@ aibreak history <id>        # past evaluation runs (shows verdict when synthesiz
 
 # personas (custom only; built-ins are fixed)
 aibreak persona list
-aibreak persona add --id investor --name Investor --prompt "..." [--weight 1.5] [--version 1.0.0]
-aibreak persona edit <id> [--name ...] [--prompt ...] [--weight ...] --version 2.0.0
+aibreak persona add --name Investor --prompt "..." [--weight 1.5]   # prints the generated ID
+aibreak persona edit <id> [--name ...] [--prompt ...] [--weight ...]  # version auto-increments
 aibreak persona rm <id>
 
 # human feedback
@@ -138,7 +175,7 @@ aibreakd   # listens on 127.0.0.1:8080 by default
 | DELETE | `/v1/ideas/{id}/resources/{rid}`  | Remove a resource      |
 | GET    | `/v1/personas`                    | List personas          |
 | POST   | `/v1/personas`                    | Create a persona       |
-| PATCH  | `/v1/personas/{id}`               | Update a custom persona (requires a new, differing `version`) |
+| PATCH  | `/v1/personas/{id}`               | Update a custom persona (version auto-increments) |
 | DELETE | `/v1/personas/{id}`               | Delete a persona       |
 
 Evaluate responses include `spread` (persona disagreement: `consensus` 0–1,
