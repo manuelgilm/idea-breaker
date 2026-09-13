@@ -34,9 +34,20 @@ func Defaults() Config {
 		MaxTokens:   512,
 		Timeout:     60 * time.Second,
 		Retries:     1,
-		DBPath:      "aibreak.db",
+		DBPath:      defaultDBPath(),
 		Addr:        "127.0.0.1:8080",
 	}
+}
+
+// defaultDBPath returns an absolute, user-writable database path (the OS user
+// config dir), falling back to a relative path if it cannot be resolved. A
+// relative path is not safe for GUI apps, which are often launched from a
+// read-only or root working directory.
+func defaultDBPath() string {
+	if dir, err := os.UserConfigDir(); err == nil {
+		return filepath.Join(dir, "aibreak", "aibreak.db")
+	}
+	return "aibreak.db"
 }
 
 // fileConfig mirrors Config with pointers so missing TOML keys are detectable.
