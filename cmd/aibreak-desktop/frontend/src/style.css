@@ -212,3 +212,15 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
   margin-left: 6px;
 }
 .badge.builtin { background: var(--elevated); color: var(--muted); border: 1px solid var(--border); }
+
+.run-toggle {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.run-toggle:hover { color: var(--accent); }
