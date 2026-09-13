@@ -460,8 +460,12 @@ type Provider interface {
 ```
 
 - `OpenAIProvider` is the first implementation (OpenAI-compatible chat
-  completions API, `json_object` response format when `JSONMode` is set).
-- Providers are discovered/configured via config (§9); the interface is designed
+  completions API, `json_object` response format when `JSONMode` is set);
+  `GeminiProvider` is the second (Google Gemini `generateContent` API — the
+  engine's `system` message maps to `systemInstruction` and `user` messages map
+  to `contents`, with `responseMimeType: "application/json"` when `JSONMode` is
+  set).
+- Providers are selected/configured via config (§9); the interface is designed
   so `anthropic`, `ollama`, etc. can be added without engine changes.
 - Errors are surfaced as typed errors the engine can distinguish:
   `ErrRateLimited` (429), `ErrAuth` (401/403), `ErrProvider` (network/5xx), and
@@ -848,9 +852,10 @@ Sources, in priority order: flags > env vars > config file > defaults.
 
 | Setting            | Env var                  | Default             |
 |--------------------|--------------------------|---------------------|
-| LLM provider       | `AIBREAK_LLM_PROVIDER` | `openai`         |
+| LLM provider       | `AIBREAK_LLM_PROVIDER` | `openai` (`openai` or `gemini`) |
 | OpenAI API key     | `OPENAI_API_KEY`         | —                   |
-| Model              | `AIBREAK_LLM_MODEL` | `gpt-4o-mini`       |
+| Gemini API key     | `GEMINI_API_KEY`         | —                   |
+| Model              | `AIBREAK_LLM_MODEL` | `gpt-4o-mini` (Gemini: `gemini-2.5-flash`) |
 | Temperature        | `AIBREAK_LLM_TEMPERATURE` | `0`              |
 | Max tokens         | `AIBREAK_LLM_MAX_TOKENS` | `512`            |
 | Timeout            | `AIBREAK_LLM_TIMEOUT`    | `60s`            |
@@ -898,7 +903,8 @@ default key applied to the running provider (see §9).
 
 ### Views
 
-- **Ideas** — a grid of cards plus a **Create / Register Idea** button. Each
+- **Ideas** — a grid of cards plus a **Create / Register Idea** button and a
+  **search box** (filters cards by title/body/tags, case-insensitively). Each
   card shows the title and the first sentences of the body, a **feasibility
   dot** (top-right), and actions to **edit**, **delete**, and open **history**.
   Clicking a card opens the detail view.
@@ -906,7 +912,7 @@ default key applied to the running provider (see §9).
   **Resources** section (add/remove `{url, title, kind, note}`), an **Evaluate**
   panel (persona checkboxes + a summary toggle + Evaluate), **History** (past
   runs; selecting a run expands its per-persona breakdown), and **Feedback**
-  (list + add).
+  (list + add + delete).
 - **Personas** — lists all personas with their `Name`, generated `ID`, and
   auto-incremented `Version`; built-ins are marked read-only, custom personas
   can be created, edited (each edit bumps the version), and deleted.
@@ -934,6 +940,8 @@ The latest run is the one with the greatest `RunID` (ULIDs are time-ordered;
 - **Given** registered ideas, **When** the ideas view loads, **Then** it shows
   every idea as a card with a feasibility dot derived from its latest run (gray
   when it has none).
+- **Given** a search term, **When** the ideas view filters, **Then** only ideas
+  whose title, body, or tags match (case-insensitively) are shown.
 - **Given** an idea and selected personas, **When** evaluation runs, **Then**
   the results show the total, spread, breakdown, and — when synthesis was
   requested — the verdict and summary, and the card's dot reflects the new
@@ -944,6 +952,8 @@ The latest run is the one with the greatest `RunID` (ULIDs are time-ordered;
   per-persona breakdown (scores and rationale) is shown.
 - **Given** valid author, score, and rationale, **When** feedback is submitted,
   **Then** it is stored and appears in the feedback view.
+- **Given** existing feedback, **When** it is deleted from the feedback view,
+  **Then** it is removed from the view.
 - **Given** a valid URL, **When** a resource is added, **Then** it is stored
   and appears in the resources view.
 - **Given** a custom persona, **When** it is created, **Then** it appears in

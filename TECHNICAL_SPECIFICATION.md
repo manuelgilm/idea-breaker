@@ -32,9 +32,9 @@ cmd/aibreakd (API adapter) ──┤
             │                                     │
             ▼                                     ▼
    internal/llm  (Provider iface)          sqlite impl + migrations
-            │
-            ▼
-   openai impl (net/http)
+             │
+             ▼
+   openai + gemini impls (net/http)
 ```
 
 - **`internal/engine`** — pure, no I/O. Imports `internal/domain` and
@@ -43,7 +43,8 @@ cmd/aibreakd (API adapter) ──┤
   that consumes the `FeasibilityScore` and writes `Summary`/`Verdict`.
 - **`internal/service`** — application layer. Orchestrates `engine` +
   `registry.Store`; owns validation, run grouping, auto-persist, cascade logic.
-- **`internal/llm`** — defines `Provider`; `openai` subpackage implements it.
+- **`internal/llm`** — defines `Provider` (and `KeyedProvider`); `openai` and
+  `gemini` subpackages implement it.
 - **`internal/registry`** — defines `Store`; `sqlite` subpackage implements it
   plus migrations and built-in persona seeding.
 - **`internal/cli` / `internal/api`** — thin adapters over `service`.
@@ -80,7 +81,7 @@ aibreak/
     ├── domain/                # shared types (Idea, Persona, Evaluation, ...)
     ├── engine/                # pure evaluation + scoring (imports domain + llm)
     ├── service/               # orchestration (engine + registry)
-    ├── llm/                   # Provider iface + openai/ impl
+    ├── llm/                   # Provider iface + openai/ + gemini/ impls
     ├── registry/              # Store iface + sqlite/ impl + migrations/
     ├── cli/                   # cobra commands
     ├── api/                   # net/http handlers + router
@@ -126,6 +127,12 @@ type Response struct { Content string }
 
 type Provider interface {
     Complete(ctx context.Context, req Request) (Response, error)
+}
+
+// KeyedProvider is a Provider whose API key can be swapped at runtime.
+type KeyedProvider interface {
+    Provider
+    SetAPIKey(key string)
 }
 ```
 
@@ -215,10 +222,13 @@ the API surfaces it as an `X-Warning` response header.
 
 Precedence (spec §9): **flags > env vars > config file > defaults**.
 
-- Env vars: `AIBREAK_*` (and `OPENAI_API_KEY`) per spec §9.
+- Env vars: `AIBREAK_*` (and `OPENAI_API_KEY`, `GEMINI_API_KEY`) per spec §9.
 - Config file: TOML at `$AIBREAK_CONFIG`, else `~/.config/aibreak/config.toml`.
 - `internal/config.Load() (Config, error)` produces a `Config` struct consumed
-  by `cmd/*`.
+  by `cmd/*`. `LLMProvider` selects the provider (`openai` or `gemini`);
+  `app.Build` maps it to the concrete `llm.KeyedProvider` and defaults the model
+  per provider (Gemini → `gemini-2.5-flash` when the model is still the OpenAI
+  default).
 
 Resolved product-spec decisions recorded here:
 - `Idea.ID` (and all generated IDs) are **ULIDs**; custom personas get generated
