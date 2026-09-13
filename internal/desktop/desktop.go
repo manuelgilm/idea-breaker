@@ -281,6 +281,10 @@ func (a *App) AddFeedback(ideaID, author string, score int, rationale, aspect st
 	return a.svc.AddFeedback(a.ctx, ideaID, author, score, rationale, aspect)
 }
 
+func (a *App) DeleteFeedback(id string) error {
+	return a.svc.DeleteFeedback(a.ctx, id)
+}
+
 // ---- Provider settings ----
 
 func (a *App) GetProviderInfo() ProviderInfo {

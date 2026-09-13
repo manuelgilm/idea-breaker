@@ -122,6 +122,7 @@ interface Window {
         // feedback
         ListFeedback(ideaID: string): Promise<Feedback[]>;
         AddFeedback(ideaID: string, author: string, score: number, rationale: string, aspect: string): Promise<Feedback>;
+        DeleteFeedback(id: string): Promise<void>;
         // provider
         GetProviderInfo(): Promise<ProviderInfo>;
         ListAPIKeys(): Promise<APIKey[]>;

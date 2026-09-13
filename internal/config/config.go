@@ -14,15 +14,16 @@ import (
 
 // Config holds all runtime settings.
 type Config struct {
-	LLMProvider string
-	APIKey      string
-	Model       string
-	Temperature float64
-	MaxTokens   int
-	Timeout     time.Duration
-	Retries     int
-	DBPath      string
-	Addr        string
+	LLMProvider  string
+	APIKey       string
+	GeminiAPIKey string
+	Model        string
+	Temperature  float64
+	MaxTokens    int
+	Timeout      time.Duration
+	Retries      int
+	DBPath       string
+	Addr         string
 }
 
 // Defaults returns the default configuration.
@@ -52,15 +53,16 @@ func defaultDBPath() string {
 
 // fileConfig mirrors Config with pointers so missing TOML keys are detectable.
 type fileConfig struct {
-	LLMProvider *string  `toml:"llm_provider"`
-	APIKey      *string  `toml:"api_key"`
-	Model       *string  `toml:"model"`
-	Temperature *float64 `toml:"temperature"`
-	MaxTokens   *int     `toml:"max_tokens"`
-	Timeout     *string  `toml:"timeout"`
-	Retries     *int     `toml:"retries"`
-	DBPath      *string  `toml:"db_path"`
-	Addr        *string  `toml:"addr"`
+	LLMProvider  *string  `toml:"llm_provider"`
+	APIKey       *string  `toml:"api_key"`
+	GeminiAPIKey *string  `toml:"gemini_api_key"`
+	Model        *string  `toml:"model"`
+	Temperature  *float64 `toml:"temperature"`
+	MaxTokens    *int     `toml:"max_tokens"`
+	Timeout      *string  `toml:"timeout"`
+	Retries      *int     `toml:"retries"`
+	DBPath       *string  `toml:"db_path"`
+	Addr         *string  `toml:"addr"`
 }
 
 // Load builds the configuration by layering defaults, the config file, and
@@ -110,6 +112,9 @@ func loadFile(cfg *Config) error {
 	}
 	if fc.APIKey != nil {
 		cfg.APIKey = *fc.APIKey
+	}
+	if fc.GeminiAPIKey != nil {
+		cfg.GeminiAPIKey = *fc.GeminiAPIKey
 	}
 	if fc.Model != nil {
 		cfg.Model = *fc.Model
@@ -169,6 +174,7 @@ func loadEnv(cfg *Config) error {
 
 	setStr("AIBREAK_LLM_PROVIDER", &cfg.LLMProvider)
 	setStr("OPENAI_API_KEY", &cfg.APIKey)
+	setStr("GEMINI_API_KEY", &cfg.GeminiAPIKey)
 	setStr("AIBREAK_LLM_MODEL", &cfg.Model)
 	setStr("AIBREAK_DB", &cfg.DBPath)
 	setStr("AIBREAK_ADDR", &cfg.Addr)

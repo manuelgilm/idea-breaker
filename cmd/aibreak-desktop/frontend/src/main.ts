@@ -176,6 +176,7 @@ async function renderIdeas(main: HTMLElement): Promise<void> {
   main.innerHTML = `
     <div class="toolbar">
       <h2>Ideas</h2>
+      <input id="idea-search" type="text" placeholder="Search ideas…" style="flex:1; max-width: 320px;" />
       <button id="create-toggle" class="primary">Create Idea</button>
     </div>
     <div id="create-panel" class="panel hidden">
@@ -200,6 +201,9 @@ async function renderIdeas(main: HTMLElement): Promise<void> {
   $("create-submit").addEventListener("click", () => {
     void createIdea();
   });
+  $("idea-search").addEventListener("input", () => {
+    void loadCards();
+  });
 
   await loadCards();
 }
@@ -209,16 +213,24 @@ async function loadCards(): Promise<void> {
   clear(grid);
   try {
     const cards = await App.ListIdeaCards();
-    if (cards.length === 0) {
-      grid.appendChild(el("p", "hint", "No ideas yet. Create one to get started."));
+    const query = inputValue("idea-search").trim().toLowerCase();
+    const filtered = query === "" ? cards : cards.filter((c) => matchesCard(c, query));
+    if (filtered.length === 0) {
+      grid.appendChild(el("p", "hint", query === "" ? "No ideas yet. Create one to get started." : "No ideas match your search."));
       return;
     }
-    for (const card of cards) {
+    for (const card of filtered) {
       grid.appendChild(ideaCard(card));
     }
   } catch (e) {
     showError(String(e));
   }
+}
+
+function matchesCard(card: IdeaCard, query: string): boolean {
+  if (card.title.toLowerCase().includes(query)) return true;
+  if (card.body.toLowerCase().includes(query)) return true;
+  return (card.tags || []).some((t) => t.toLowerCase().includes(query));
 }
 
 function ideaCard(card: IdeaCard): HTMLElement {
@@ -596,8 +608,21 @@ async function renderFeedback(): Promise<void> {
       const li = el("li");
       li.appendChild(el("div", undefined, `${f.author}: ${f.score}/5 — ${f.rationale}`));
       if (f.aspect) li.appendChild(el("div", "meta", f.aspect));
+      const del = el("button", "small danger", "Delete");
+      del.style.marginTop = "6px";
+      del.addEventListener("click", () => void deleteFeedback(f.id));
+      li.appendChild(del);
       list.appendChild(li);
     }
+  } catch (e) {
+    showError(String(e));
+  }
+}
+
+async function deleteFeedback(id: string): Promise<void> {
+  try {
+    await App.DeleteFeedback(id);
+    await renderFeedback();
   } catch (e) {
     showError(String(e));
   }

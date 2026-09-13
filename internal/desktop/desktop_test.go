@@ -213,6 +213,11 @@ func TestAddAndListFeedback(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, all, 1)
 	assert.Equal(t, fb.ID, all[0].ID)
+
+	require.NoError(t, app.DeleteFeedback(fb.ID))
+	all, err = app.ListFeedback(idea.ID)
+	require.NoError(t, err)
+	require.Empty(t, all)
 }
 
 func TestResources(t *testing.T) {
