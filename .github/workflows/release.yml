@@ -44,12 +44,9 @@ jobs:
           - os: ubuntu-latest
             goos: linux
             arch: amd64
-          - os: macos-13
-            goos: darwin
-            arch: amd64
           - os: macos-14
             goos: darwin
-            arch: arm64
+            arch: universal
           - os: windows-latest
             goos: windows
             arch: amd64
@@ -74,9 +71,20 @@ jobs:
       - name: Install Wails CLI
         run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
-      - name: Build desktop app
+      - name: Build desktop app (Linux)
+        if: runner.os == 'Linux'
         working-directory: cmd/aibreak-desktop
         run: wails build -tags "webkit2_41"
+
+      - name: Build desktop app (macOS)
+        if: runner.os == 'macOS'
+        working-directory: cmd/aibreak-desktop
+        run: wails build -platform darwin/universal
+
+      - name: Build desktop app (Windows)
+        if: runner.os == 'Windows'
+        working-directory: cmd/aibreak-desktop
+        run: wails build
 
       - name: Package (Linux)
         if: runner.os == 'Linux'
