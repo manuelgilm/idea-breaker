@@ -51,3 +51,30 @@ func TestCompleteAuthFailure(t *testing.T) {
 	_, err := p.Complete(context.Background(), llm.Request{Model: "m"})
 	assert.ErrorIs(t, err, llm.ErrAuth)
 }
+
+// TestSetAPIKeyConcurrent exercises SetAPIKey while Complete is in flight; run
+// under -race it guards the apiKey field access.
+func TestSetAPIKeyConcurrent(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"ok"}}]}`))
+	}))
+	defer srv.Close()
+
+	p := New("initial", WithBaseURL(srv.URL))
+
+	const n = 32
+	done := make(chan struct{}, n)
+	for i := 0; i < n; i++ {
+		go func() {
+			defer func() { done <- struct{}{} }()
+			_, _ = p.Complete(context.Background(), llm.Request{Model: "m"})
+		}()
+	}
+	for i := 0; i < n; i++ {
+		p.SetAPIKey("updated")
+	}
+	for i := 0; i < n; i++ {
+		<-done
+	}
+}

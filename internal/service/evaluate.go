@@ -24,7 +24,12 @@ func (s *Service) Evaluate(ctx context.Context, ideaID string, personaIDs []stri
 			return domain.FeasibilityScore{}, err
 		}
 	} else {
+		seen := make(map[string]struct{}, len(personaIDs))
 		for _, id := range personaIDs {
+			if _, ok := seen[id]; ok {
+				continue
+			}
+			seen[id] = struct{}{}
 			p, err := s.store.GetPersona(ctx, id)
 			if err != nil {
 				return domain.FeasibilityScore{}, fmt.Errorf("%w: unknown persona %q", ErrValidation, id)

@@ -18,6 +18,9 @@ func (s *Service) CreatePersona(ctx context.Context, name, systemPrompt string, 
 	if weight < 0 {
 		return domain.Persona{}, fmt.Errorf("%w: weight must be >= 0", ErrValidation)
 	}
+	if weight == 0 {
+		weight = 1.0
+	}
 
 	p := domain.Persona{
 		ID:           newID(),
@@ -43,6 +46,10 @@ func (s *Service) UpdatePersona(ctx context.Context, id string, patch domain.Per
 		return domain.Persona{}, err
 	}
 
+	if patch.Name == nil && patch.SystemPrompt == nil && patch.Weight == nil {
+		return domain.Persona{}, fmt.Errorf("%w: no fields provided to update", ErrValidation)
+	}
+
 	if patch.Name != nil {
 		if *patch.Name == "" {
 			return domain.Persona{}, fmt.Errorf("%w: name must be non-empty", ErrValidation)
@@ -58,6 +65,9 @@ func (s *Service) UpdatePersona(ctx context.Context, id string, patch domain.Per
 	if patch.Weight != nil {
 		if *patch.Weight < 0 {
 			return domain.Persona{}, fmt.Errorf("%w: weight must be >= 0", ErrValidation)
+		}
+		if *patch.Weight == 0 {
+			*patch.Weight = 1.0
 		}
 		p.Weight = *patch.Weight
 	}

@@ -19,7 +19,7 @@ func (s *Store) AddResource(ctx context.Context, r domain.Resource) (domain.Reso
 
 func (s *Store) ListResources(ctx context.Context, ideaID string) ([]domain.Resource, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, idea_id, url, title, kind, note, created_at FROM resources WHERE idea_id = ? ORDER BY created_at ASC`, ideaID)
+		`SELECT id, idea_id, url, title, kind, note, created_at FROM resources WHERE idea_id = ? ORDER BY created_at ASC, id ASC`, ideaID)
 	if err != nil {
 		return nil, err
 	}

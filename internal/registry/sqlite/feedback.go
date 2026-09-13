@@ -19,7 +19,7 @@ func (s *Store) AddFeedback(ctx context.Context, f domain.Feedback) (domain.Feed
 
 func (s *Store) ListFeedback(ctx context.Context, ideaID string) ([]domain.Feedback, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, idea_id, author, score, rationale, aspect, created_at FROM feedbacks WHERE idea_id = ? ORDER BY created_at ASC`, ideaID)
+		`SELECT id, idea_id, author, score, rationale, aspect, created_at FROM feedbacks WHERE idea_id = ? ORDER BY created_at ASC, id ASC`, ideaID)
 	if err != nil {
 		return nil, err
 	}

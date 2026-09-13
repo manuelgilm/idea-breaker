@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"time"
@@ -19,6 +20,10 @@ func main() {
 	if err != nil {
 		logger.Error("config", "err", err)
 		os.Exit(1)
+	}
+
+	if !isLoopback(cfg.Addr) {
+		logger.Warn("binding to a non-loopback address exposes the unauthenticated API", "addr", cfg.Addr)
 	}
 
 	svc, _, store, err := app.Build(cfg)
@@ -39,4 +44,17 @@ func main() {
 		logger.Error("server", "err", err)
 		os.Exit(1)
 	}
+}
+
+// isLoopback reports whether addr binds to a loopback interface only.
+func isLoopback(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		host = addr
+	}
+	if host == "" || host == "localhost" {
+		return true
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

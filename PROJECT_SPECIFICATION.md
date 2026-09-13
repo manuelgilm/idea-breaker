@@ -70,7 +70,7 @@ gain an `OwnerID` field; it is intentionally omitted from v1.
 | `ID`           | string  | Generated ULID for custom personas; built-ins keep stable slugs (`skeptic`, `optimist`, `engineer`) |
 | `Name`         | string  | Display name                                     |
 | `SystemPrompt` | string  | Instruction set defining the perspective (should include 0–5 rubric anchors; see §3) |
-| `Weight`       | float   | Default 1.0; used in the aggregate score         |
+| `Weight`       | float   | Default 1.0 (a zero weight is normalized to 1.0); used in the aggregate score |
 | `Version`      | int     | Auto-incremented (1, 2, 3, …) on every edit; captured by evaluations |
 | `Created`      | time    | Set on creation                                  |
 
@@ -299,6 +299,10 @@ test.
   `UpdatePersona` is called, **Then** it returns a validation error.
 - **Given** a `Weight` provided as negative, **When** `UpdatePersona` is
   called, **Then** it returns a validation error.
+- **Given** a `Weight` provided as `0`, **When** `UpdatePersona` is called,
+  **Then** the persona is stored with `Weight` `1.0` (the default).
+- **Given** no provided fields (an empty patch), **When** `UpdatePersona` is
+  called, **Then** it returns a validation error.
 - **Given** a built-in persona id, **When** `UpdatePersona` is called, **Then**
   it returns a conflict error (built-ins are not editable).
 - **Given** an unknown id, **When** `UpdatePersona` is called, **Then** it
@@ -313,6 +317,8 @@ test.
   called, **Then** it returns a validation error.
 - **Given** a negative `Weight`, **When** `CreatePersona` is called, **Then**
   it returns a validation error.
+- **Given** a `Weight` of `0`, **When** `CreatePersona` is called, **Then** the
+  persona is stored with `Weight` `1.0` (the default).
 
 ### Evaluate an idea
 
@@ -344,6 +350,9 @@ test.
   returns a validation error.
 - **Given** a requested persona id that does not exist, **When** `Evaluate` is
   invoked, **Then** it returns a validation error.
+- **Given** a set of persona ids containing duplicates, **When** `Evaluate` is
+  invoked, **Then** each distinct persona is evaluated once (duplicates are
+  ignored).
 
 When the persona set is omitted, `Evaluate` uses **all** personas in the store
 (built-in and custom).
@@ -551,7 +560,9 @@ The engine parses the provider content as strict JSON:
 - **Encoding**: `ideas.tags` is a JSON array of strings in a single TEXT column.
   `ListIdeas(tag)` matches ideas whose `tags` array contains the exact tag value.
 - **Timestamps** are stored as RFC3339 UTC text (e.g. `2026-09-11T10:00:00Z`),
-  which sorts lexicographically in chronological order.
+  which sorts lexicographically in chronological order. Timestamps have
+  second precision, so list ordering breaks same-second ties by the ULID `id`
+  (lexicographically time-ordered).
 - **Nullability**: in `evaluations`, `score` is `NULL` when `Status=failed`;
   `rationale` is the empty string on failure and `error` is the empty string on
   success.
@@ -681,6 +692,8 @@ error.
 - `persona add` prints the generated persona ID; `persona edit` flags are
   optional and only provided flags change the persona (the version
   auto-increments).
+- A global `--db <path>` (or `--db=<path>`) flag overrides the SQLite database
+  path (same precedence as the `AIBREAK_DB` env var, per §9).
 
 ### Acceptance criteria
 
@@ -697,6 +710,8 @@ error.
   title, body, and tags, exiting 0.
 - **Given** `registry edit <id> --title "Y"`, **When** run, **Then** it updates
   the idea and exits 0.
+- **Given** `aibreak --db <path> registry add --title "X"`, **When** run, **Then**
+  the idea is stored in the database at `<path>` and exits 0.
 - **Given** `evaluate <id>` with a mocked provider, **When** run, **Then** it
   prints per-persona scores and the aggregate total with spread, exiting 0.
 - **Given** `evaluate <id> --summary` with a mocked provider, **When** run,
@@ -727,6 +742,10 @@ Server: `aibreakd`. JSON over HTTP. Errors use a consistent envelope:
 ```json
 { "error": { "code": "not_found", "message": "..." } }
 ```
+
+The API has **no authentication** (single-user local tool, §1). It binds to
+`127.0.0.1:8080` by default; if `AIBREAK_ADDR` binds to a non-loopback address,
+`aibreakd` logs a warning that the API is exposed to the network.
 
 | Method | Path                | Description                    | Success |
 |--------|---------------------|--------------------------------|---------|
@@ -845,7 +864,9 @@ flag) lives in the SQLite store, while each **secret** lives in the **OS
 keyring** (service `aibreak`, account `<provider>:<keyID>`). One key per
 provider is the **default**; the desktop applies it to the running provider at
 startup and whenever the default changes, taking precedence over the
-`OPENAI_API_KEY` env var / config file.
+`OPENAI_API_KEY` env var / config file. If persisting the metadata fails after
+the secret was written, the secret is removed from the keyring (best-effort
+rollback).
 
 ## 10. Non-functional requirements
 

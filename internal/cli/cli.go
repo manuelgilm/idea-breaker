@@ -20,6 +20,11 @@ func New(svc *service.Service) *cobra.Command {
 		SilenceErrors: true,
 	}
 
+	// The --db flag is consumed by cmd/aibreak before the store is opened (the
+	// path must be known before the service is built); it is registered here so
+	// --help lists it. See cmd/aibreak/main.go extractDBFlag.
+	root.PersistentFlags().String("db", "", "path to the SQLite database")
+
 	root.AddCommand(
 		newEvaluateCmd(svc),
 		newHistoryCmd(svc),

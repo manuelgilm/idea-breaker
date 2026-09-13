@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 	"time"
 
 	"aibreak/internal/llm"
@@ -18,6 +19,7 @@ const defaultBaseURL = "https://api.openai.com/v1"
 
 // Provider is an OpenAI-compatible chat completions client.
 type Provider struct {
+	mu      sync.RWMutex
 	apiKey  string
 	baseURL string
 	client  *http.Client
@@ -54,7 +56,9 @@ func New(apiKey string, opts ...Option) *Provider {
 // caller (e.g. the desktop settings screen) update credentials at runtime
 // without rebuilding the provider.
 func (p *Provider) SetAPIKey(key string) {
+	p.mu.Lock()
 	p.apiKey = key
+	p.mu.Unlock()
 }
 
 type completionRequest struct {
@@ -113,7 +117,9 @@ func (p *Provider) Complete(ctx context.Context, req llm.Request) (llm.Response,
 		return llm.Response{}, fmt.Errorf("%w: %v", llm.ErrProvider, err)
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
+	p.mu.RLock()
 	httpReq.Header.Set("Authorization", "Bearer "+p.apiKey)
+	p.mu.RUnlock()
 
 	resp, err := p.client.Do(httpReq)
 	if err != nil {

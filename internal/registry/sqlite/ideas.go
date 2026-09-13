@@ -28,7 +28,7 @@ func (s *Store) GetIdea(ctx context.Context, id string) (domain.Idea, error) {
 
 func (s *Store) ListIdeas(ctx context.Context, tag string) ([]domain.Idea, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, title, body, tags, created_at, updated_at FROM ideas ORDER BY created_at DESC`)
+		`SELECT id, title, body, tags, created_at, updated_at FROM ideas ORDER BY created_at DESC, id DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -52,7 +52,7 @@ func (s *Store) ListIdeas(ctx context.Context, tag string) ([]domain.Idea, error
 // (compared on trimmed values).
 func (s *Store) FindIdeasByTitle(ctx context.Context, title string) ([]domain.Idea, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, title, body, tags, created_at, updated_at FROM ideas WHERE LOWER(TRIM(title)) = LOWER(TRIM(?)) ORDER BY created_at DESC`, title)
+		`SELECT id, title, body, tags, created_at, updated_at FROM ideas WHERE LOWER(TRIM(title)) = LOWER(TRIM(?)) ORDER BY created_at DESC, id DESC`, title)
 	if err != nil {
 		return nil, err
 	}
