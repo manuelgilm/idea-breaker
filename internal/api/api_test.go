@@ -208,6 +208,16 @@ func TestUpdatePersona(t *testing.T) {
 	})
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 
+	rec = doJSON(t, h, http.MethodPatch, "/v1/personas/"+created.ID, map[string]any{})
+	assert.Equal(t, http.StatusBadRequest, rec.Code, "empty patch rejected")
+
+	rec = doJSON(t, h, http.MethodPatch, "/v1/personas/"+created.ID, map[string]any{
+		"weight": 0,
+	})
+	assert.Equal(t, http.StatusOK, rec.Code)
+	p = decode[domain.Persona](t, rec)
+	assert.Equal(t, 1.0, p.Weight, "zero weight normalized to 1.0")
+
 	rec = doJSON(t, h, http.MethodPatch, "/v1/personas/skeptic", map[string]any{
 		"name": "Nope",
 	})
