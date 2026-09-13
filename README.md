@@ -68,7 +68,7 @@ Download the `aibreak-desktop` asset for your platform from
 
 - **Linux** — `aibreak-desktop-<version>-linux-amd64.tar.gz`; extract and run the
   `aibreak-desktop` binary.
-- **macOS** — `aibreak-desktop-<version>-darwin-<arch>.zip` (Intel or Apple
+- **macOS** — `aibreak-desktop-<version>-darwin-universal.zip` (Intel + Apple
   Silicon); unzip and run `aibreak-desktop.app`.
 - **Windows** — `aibreak-desktop-<version>-windows-amd64.zip`; unzip and run
   `aibreak-desktop.exe`.
