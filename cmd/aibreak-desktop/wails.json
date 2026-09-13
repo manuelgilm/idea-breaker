@@ -1,0 +1,13 @@
+{
+  "$schema": "https://wails.io/schemas/config.v2.json",
+  "name": "aibreak-desktop",
+  "outputfilename": "aibreak-desktop",
+  "frontend:install": "npm install",
+  "frontend:build": "npm run build",
+  "frontend:dev:watcher": "npm run dev",
+  "frontend:dist": "frontend/dist",
+  "wailsjsdir": "frontend/wailsjs",
+  "author": {
+    "name": "aibreak"
+  }
+}

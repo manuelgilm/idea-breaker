@@ -67,12 +67,15 @@ aibreak/
 ├── cmd/
 │   ├── aibreak/main.go        # CLI entrypoint
 │   ├── aibreakd/main.go       # HTTP server entrypoint
-│   └── aibreak-desktop/main.go # desktop app entrypoint (Wails)
-├── frontend/                  # desktop UI: vanilla TS + minimal CSS
-│   ├── index.html
-│   ├── src/
-│   └── tsconfig.json
-├── wails.json                 # Wails project config
+│   └── aibreak-desktop/       # self-contained Wails project: `wails build`
+│       │                      # and `wails dev` run from THIS directory, since
+│       │                      # Wails always builds the package in cwd
+│       ├── main.go            # desktop app entrypoint
+│       ├── wails.json         # Wails project config (frontend paths relative here)
+│       └── frontend/          # desktop UI: vanilla TS + minimal CSS
+│           ├── index.html
+│           ├── src/
+│           └── tsconfig.json
 └── internal/
     ├── domain/                # shared types (Idea, Persona, Evaluation, ...)
     ├── engine/                # pure evaluation + scoring (imports domain + llm)
@@ -243,8 +246,8 @@ Each acceptance criterion in the product spec maps 1:1 to a test.
 - `make lint` — `golangci-lint run`.
 - `make run-cli` / `make run-api` — dev run helpers.
 - `make fmt` — `gofmt` + `go mod tidy`.
-- `make desktop-dev` — `wails dev` (hot-reload frontend + Go backend).
-- `make desktop-build` — `wails build` (native binary for the host OS).
+- `make desktop-dev` — `wails dev` run inside `cmd/aibreak-desktop` (hot-reload frontend + Go backend).
+- `make desktop-build` — `wails build` run inside `cmd/aibreak-desktop` (native binary for the host OS).
 
 CI (optional, later): `go test ./...` + `golangci-lint` on PR.
 
@@ -254,3 +257,9 @@ an OS matrix (ubuntu/macos/windows runners), each running `wails build`, and
 GoReleaser ships `aibreak-desktop` alongside the CLI/API binaries. Prereqs:
 Wails CLI + Node.js everywhere; webkit2gtk system deps on Linux CI runners
 (macOS WKWebView and Windows WebView2 are built-in).
+
+**Linux webkit version.** Wails defaults to `webkit2gtk-4.0`, which modern
+distros (Ubuntu 24.04+) no longer ship — only `webkit2gtk-4.1` is available.
+All Linux desktop builds in this repo therefore pass `-tags "webkit2_41"`
+(see `Makefile` targets); CI runners must install `libwebkit2gtk-4.1-dev`.
+Plain `go build`/`go vet`/`go test` are unaffected and need no flags.

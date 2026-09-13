@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>aibreak</title>
+  <link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header>
+    <h1>aibreak</h1>
+    <nav>
+      <button data-view="ideas" type="button">Ideas</button>
+    </nav>
+  </header>
+  <main>
+    <section id="view-ideas">
+      <h2>Ideas</h2>
+      <input id="tag-filter" type="text" placeholder="filter by tag" />
+      <button id="tag-filter-btn" type="button">Filter</button>
+      <ul id="ideas-list"></ul>
+    </section>
+    <section id="view-detail" hidden>
+      <button id="back-btn" type="button">← Back</button>
+      <h2 id="detail-title"></h2>
+      <p id="detail-body"></p>
+      <div id="evaluate-form">
+        <input id="personas-input" type="text" placeholder="persona ids, comma-separated (empty = all)" />
+        <label><input id="summary-check" type="checkbox" /> Synthesize summary</label>
+        <button id="evaluate-btn" type="button">Evaluate</button>
+      </div>
+      <div id="evaluate-result"></div>
+      <div id="history">
+        <h3>History</h3>
+        <ul id="history-list"></ul>
+      </div>
+      <div id="feedback">
+        <h3>Feedback</h3>
+        <ul id="feedback-list"></ul>
+        <input id="fb-author" type="text" placeholder="author" />
+        <input id="fb-score" type="number" min="0" max="5" placeholder="score 0-5" />
+        <input id="fb-rationale" type="text" placeholder="rationale" />
+        <input id="fb-aspect" type="text" placeholder="aspect (optional)" />
+        <button id="fb-add-btn" type="button">Add feedback</button>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="./main.js"></script>
+</body>
+</html>
