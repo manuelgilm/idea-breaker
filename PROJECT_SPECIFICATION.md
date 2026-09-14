@@ -988,5 +988,4 @@ The latest run is the one with the greatest `RunID` (ULIDs are time-ordered;
 
 - Authentication (the welcome screen is only the seam).
 - Base-URL / temperature settings in the UI (config-file/env only).
-- Usage/cost monitoring (a later milestone).
 - LLM providers beyond OpenAI and Gemini.
