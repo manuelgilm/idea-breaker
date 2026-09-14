@@ -32,6 +32,13 @@ type Provider interface {
 	Complete(ctx context.Context, req Request) (Response, error)
 }
 
+// KeyedProvider is a Provider whose API key can be swapped at runtime (used by
+// the desktop settings screen to update credentials in place).
+type KeyedProvider interface {
+	Provider
+	SetAPIKey(key string)
+}
+
 var (
 	// ErrRateLimited indicates an upstream rate limit (HTTP 429).
 	ErrRateLimited = errors.New("llm: rate limited")

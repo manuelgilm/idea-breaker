@@ -208,7 +208,8 @@ user-supplied. `Kind` is a fixed set with `other` as the fallback.
   scale. Interpretation (used by every surface): `consensus` for spread 0–1,
   `mixed` for 2–3, `divided` for 4–5.
 - **Failure handling**: if *all* personas fail, evaluation returns an error and no
-  `FeasibilityScore` is produced.
+  `FeasibilityScore` is produced. The error message includes each failed
+  persona's reason (e.g. `skeptic: llm: auth failure; …`).
 - **Zero-weight guard**: if `Σ(weight_i) = 0` over the successful personas,
   evaluation returns an error (avoids division by zero).
 - **Synthesis is separate and non-numeric**: an optional second-stage pass
@@ -227,7 +228,8 @@ user-supplied. `Kind` is a fixed set with `other` as the fallback.
   aggregates, **Then** the failed persona is excluded and `Requested` counts it
   while `Responded` does not.
 - **Given** all personas fail, **When** evaluation runs, **Then** it returns an
-  error and no `FeasibilityScore` is produced.
+  error (with each persona's failure reason) and no `FeasibilityScore` is
+  produced.
 - **Given** all successful personas have weight `0`, **When** the engine
   aggregates, **Then** it returns an error (division by zero guard).
 - **Given** successful scores `{skeptic: 1, optimist: 5, engineer: 3}`,
@@ -460,8 +462,12 @@ type Provider interface {
 ```
 
 - `OpenAIProvider` is the first implementation (OpenAI-compatible chat
-  completions API, `json_object` response format when `JSONMode` is set).
-- Providers are discovered/configured via config (§9); the interface is designed
+  completions API, `json_object` response format when `JSONMode` is set);
+  `GeminiProvider` is the second (Google Gemini `generateContent` API — the
+  engine's `system` message maps to `systemInstruction` and `user` messages map
+  to `contents`, with `responseMimeType: "application/json"` when `JSONMode` is
+  set).
+- Providers are selected/configured via config (§9); the interface is designed
   so `anthropic`, `ollama`, etc. can be added without engine changes.
 - Errors are surfaced as typed errors the engine can distinguish:
   `ErrRateLimited` (429), `ErrAuth` (401/403), `ErrProvider` (network/5xx), and
@@ -556,6 +562,7 @@ The engine parses the provider content as strict JSON:
   - `feedbacks(id, idea_id, author, score, rationale, aspect, created_at)`
   - `resources(id, idea_id, url, title, kind, note, created_at)`
   - `provider_keys(id, provider, label, hint, is_default, created_at)` — metadata only; the secret lives in the OS keyring
+  - `settings(key, value)` — key-value application settings (active provider, per-provider models, …)
 
 - **Encoding**: `ideas.tags` is a JSON array of strings in a single TEXT column.
   `ListIdeas(tag)` matches ideas whose `tags` array contains the exact tag value.
@@ -848,9 +855,11 @@ Sources, in priority order: flags > env vars > config file > defaults.
 
 | Setting            | Env var                  | Default             |
 |--------------------|--------------------------|---------------------|
-| LLM provider       | `AIBREAK_LLM_PROVIDER` | `openai`         |
+| LLM provider       | `AIBREAK_LLM_PROVIDER` | `openai` (`openai` or `gemini`) |
 | OpenAI API key     | `OPENAI_API_KEY`         | —                   |
+| Gemini API key     | `GEMINI_API_KEY`         | —                   |
 | Model              | `AIBREAK_LLM_MODEL` | `gpt-4o-mini`       |
+| Gemini model       | `AIBREAK_GEMINI_MODEL` | `gemini-3.8-flash`  |
 | Temperature        | `AIBREAK_LLM_TEMPERATURE` | `0`              |
 | Max tokens         | `AIBREAK_LLM_MAX_TOKENS` | `512`            |
 | Timeout            | `AIBREAK_LLM_TIMEOUT`    | `60s`            |
@@ -864,9 +873,11 @@ flag) lives in the SQLite store, while each **secret** lives in the **OS
 keyring** (service `aibreak`, account `<provider>:<keyID>`). One key per
 provider is the **default**; the desktop applies it to the running provider at
 startup and whenever the default changes, taking precedence over the
-`OPENAI_API_KEY` env var / config file. If persisting the metadata fails after
-the secret was written, the secret is removed from the keyring (best-effort
-rollback).
+`OPENAI_API_KEY` / `GEMINI_API_KEY` env vars / config file. The desktop can
+**switch the active provider at runtime** (OpenAI ↔ Gemini) and **edit each
+provider's model**; both are persisted in the `settings` table and override the
+config/env defaults on launch. If persisting the metadata fails after the secret
+was written, the secret is removed from the keyring (best-effort rollback).
 
 ## 10. Non-functional requirements
 
@@ -894,26 +905,33 @@ default key applied to the running provider (see §9).
 
 2. **Main app** — a left sidebar (navigation) and a content area:
    - **Registry** → **Ideas**, **Personas**.
-   - **LLM Provider** → **OpenAI**.
+   - **LLM Provider** → one entry per provider (e.g. **OpenAI**, **Gemini**),
+     each opening that provider's settings and making it the active provider.
 
 ### Views
 
-- **Ideas** — a grid of cards plus a **Create / Register Idea** button. Each
+- **Ideas** — a grid of cards plus a **Create / Register Idea** button and a
+  **search box** (filters cards by title/body/tags, case-insensitively). Each
   card shows the title and the first sentences of the body, a **feasibility
   dot** (top-right), and actions to **edit**, **delete**, and open **history**.
   Clicking a card opens the detail view.
 - **Idea detail** — title, body, and tags (editable), creation/update time, a
   **Resources** section (add/remove `{url, title, kind, note}`), an **Evaluate**
-  panel (persona checkboxes + a summary toggle + Evaluate), **History** (past
-  runs; selecting a run expands its per-persona breakdown), and **Feedback**
-  (list + add).
+  panel (persona checkboxes + a summary toggle + Evaluate; the Evaluate button
+  is disabled and a warning shown until the active provider has an API key),
+  **History** (past runs; selecting a run expands its per-persona breakdown),
+  and **Feedback** (list + add + delete).
 - **Personas** — lists all personas with their `Name`, generated `ID`, and
   auto-incremented `Version`; built-ins are marked read-only, custom personas
   can be created, edited (each edit bumps the version), and deleted.
-- **OpenAI provider** — shows the provider name/model and a list of registered
-  API keys (label + masked suffix + default flag); the user can **add**, **set
-  default**, and **delete** keys (the secret is stored in the keyring; metadata
-  in the store).
+- **LLM provider** — the sidebar lists every supported provider (OpenAI,
+  Gemini); selecting one switches the running provider and applies its default
+  key. The view shows the active provider's name, an **editable model** (a free
+  text field with suggestions; the change applies at runtime and persists), and
+  its registered API keys (label + masked suffix + default flag); the user can
+  **add**, **set default**, and **delete** keys (the secret is stored in the
+  keyring; metadata in the store). The active provider and per-provider models
+  are **persisted** across restarts (see §9).
 
 ### Feasibility dot
 
@@ -934,6 +952,8 @@ The latest run is the one with the greatest `RunID` (ULIDs are time-ordered;
 - **Given** registered ideas, **When** the ideas view loads, **Then** it shows
   every idea as a card with a feasibility dot derived from its latest run (gray
   when it has none).
+- **Given** a search term, **When** the ideas view filters, **Then** only ideas
+  whose title, body, or tags match (case-insensitively) are shown.
 - **Given** an idea and selected personas, **When** evaluation runs, **Then**
   the results show the total, spread, breakdown, and — when synthesis was
   requested — the verdict and summary, and the card's dot reflects the new
@@ -944,12 +964,14 @@ The latest run is the one with the greatest `RunID` (ULIDs are time-ordered;
   per-persona breakdown (scores and rationale) is shown.
 - **Given** valid author, score, and rationale, **When** feedback is submitted,
   **Then** it is stored and appears in the feedback view.
+- **Given** existing feedback, **When** it is deleted from the feedback view,
+  **Then** it is removed from the view.
 - **Given** a valid URL, **When** a resource is added, **Then** it is stored
   and appears in the resources view.
 - **Given** a custom persona, **When** it is created, **Then** it appears in
   the personas view and is selectable during evaluation; built-ins are shown
   but not deletable.
-- **Given** an API key, **When** it is added in the provider view, **Then** its
+- **Given** an API key, **When** it is added for the active provider, **Then** its
   metadata appears in the key list (with a masked suffix) and its secret is
   stored in the OS keyring; the first key becomes the default and is used by
   subsequent evaluations.
@@ -958,9 +980,12 @@ The latest run is the one with the greatest `RunID` (ULIDs are time-ordered;
   is cleared.
 - **Given** the default key, **When** it is deleted, **Then** the most recently
   added remaining key is promoted to default (or none if no keys remain).
+- **Given** the provider view, **When** the user selects a provider (OpenAI or
+  Gemini), **Then** the running provider switches to it and its default key is
+  applied (or cleared if it has none).
 
 ### Out of scope (still deferred per §1)
 
 - Authentication (the welcome screen is only the seam).
-- Model / base-URL / temperature settings in the UI (config-file/env only).
-- Multi-provider configuration beyond OpenAI.
+- Base-URL / temperature settings in the UI (config-file/env only).
+- LLM providers beyond OpenAI and Gemini.

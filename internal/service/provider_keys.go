@@ -32,6 +32,10 @@ func (s *Service) ListProviderKeys(ctx context.Context, provider string) ([]doma
 	return s.store.ListProviderKeys(ctx, provider)
 }
 
+func (s *Service) GetProviderKey(ctx context.Context, id string) (domain.APIKey, error) {
+	return s.store.GetProviderKey(ctx, id)
+}
+
 // DeleteProviderKey removes a key's metadata. If the deleted key was the
 // default, the most recently created remaining key is promoted to default.
 func (s *Service) DeleteProviderKey(ctx context.Context, id string) error {

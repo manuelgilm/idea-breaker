@@ -467,3 +467,23 @@ func TestMigrationV4ToV5(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, keys)
 }
+
+func TestSettings(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	v, err := s.GetSetting(ctx, "missing")
+	require.NoError(t, err)
+	assert.Empty(t, v, "absent key returns empty string")
+
+	require.NoError(t, s.SetSetting(ctx, "openai.model", "gpt-4o"))
+	v, err = s.GetSetting(ctx, "openai.model")
+	require.NoError(t, err)
+	assert.Equal(t, "gpt-4o", v)
+
+	// Upsert: same key overwrites.
+	require.NoError(t, s.SetSetting(ctx, "openai.model", "gpt-4.1"))
+	v, err = s.GetSetting(ctx, "openai.model")
+	require.NoError(t, err)
+	assert.Equal(t, "gpt-4.1", v)
+}
