@@ -51,6 +51,7 @@ func main() {
 		AssetServer: &assetserver.Options{
 			Assets: assets,
 		},
+		OnStartup: appl.Startup,
 		Bind: []interface{}{
 			appl,
 		},

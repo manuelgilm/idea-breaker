@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -342,5 +343,103 @@ func TestEvaluateSummarize(t *testing.T) {
 		assert.Empty(t, score.Verdict)
 		assert.Empty(t, score.Summary)
 		assert.Equal(t, 1, score.Responded)
+	})
+}
+
+func TestEvaluateWithProgress(t *testing.T) {
+	t.Run("invokes onResult once per persona", func(t *testing.T) {
+		p := scripted(map[string]int{"skeptic": 2, "optimist": 4, "engineer": 3}, nil)
+		e := New(p)
+
+		var mu sync.Mutex
+		got := map[string]domain.Evaluation{}
+		score, err := e.EvaluateWithProgress(context.Background(), idea(),
+			[]domain.Persona{persona("skeptic", 1), persona("optimist", 1), persona("engineer", 1)},
+			false, func(ev domain.Evaluation) {
+				mu.Lock()
+				got[ev.PersonaID] = ev
+				mu.Unlock()
+			})
+		require.NoError(t, err)
+
+		assert.Len(t, got, 3)
+		for _, ev := range got {
+			assert.Equal(t, "success", ev.Status)
+			assert.Equal(t, "ok", ev.Rationale)
+			assert.Equal(t, score.Breakdown[0].RunID, ev.RunID)
+		}
+	})
+
+	t.Run("reports failures through onResult", func(t *testing.T) {
+		p := scripted(map[string]int{"good": 4}, map[string]error{"bad": llm.ErrAuth})
+		e := New(p)
+
+		var mu sync.Mutex
+		got := map[string]domain.Evaluation{}
+		_, err := e.EvaluateWithProgress(context.Background(), idea(),
+			[]domain.Persona{persona("good", 1), persona("bad", 1)},
+			false, func(ev domain.Evaluation) {
+				mu.Lock()
+				got[ev.PersonaID] = ev
+				mu.Unlock()
+			})
+		require.NoError(t, err)
+
+		require.Len(t, got, 2)
+		assert.Equal(t, "success", got["good"].Status)
+		assert.Equal(t, "failed", got["bad"].Status)
+		assert.Contains(t, got["bad"].Error, "auth")
+	})
+
+	t.Run("nil callback is a no-op", func(t *testing.T) {
+		p := scripted(map[string]int{"a": 3}, nil)
+		e := New(p)
+		score, err := e.EvaluateWithProgress(context.Background(), idea(),
+			[]domain.Persona{persona("a", 1)}, false, nil)
+		require.NoError(t, err)
+		assert.Equal(t, 1, score.Responded)
+	})
+}
+
+func TestEvaluateConcurrency(t *testing.T) {
+	build := func(opts ...Option) (*Evaluator, func() int) {
+		var mu sync.Mutex
+		inFlight, peak := 0, 0
+		provider := fakeProvider{fn: func(ctx context.Context, req llm.Request) (llm.Response, error) {
+			mu.Lock()
+			inFlight++
+			if inFlight > peak {
+				peak = inFlight
+			}
+			mu.Unlock()
+			time.Sleep(2 * time.Millisecond)
+			mu.Lock()
+			inFlight--
+			mu.Unlock()
+			return llm.Response{Content: `{"score":3,"rationale":"ok"}`}, nil
+		}}
+		e := New(provider, opts...)
+		peakFn := func() int {
+			mu.Lock()
+			defer mu.Unlock()
+			return peak
+		}
+		return e, peakFn
+	}
+	eval := func(e *Evaluator) {
+		_, err := e.Evaluate(context.Background(), idea(),
+			[]domain.Persona{persona("a", 1), persona("b", 1), persona("c", 1)}, false)
+		require.NoError(t, err)
+	}
+
+	t.Run("default evaluates serially", func(t *testing.T) {
+		e, peak := build()
+		eval(e)
+		assert.Equal(t, 1, peak())
+	})
+	t.Run("WithConcurrency raises parallelism", func(t *testing.T) {
+		e, peak := build(WithConcurrency(2))
+		eval(e)
+		assert.Equal(t, 2, peak())
 	})
 }

@@ -98,6 +98,14 @@ interface APIKey {
   created: string;
 }
 
+interface PersonaResult {
+  name: string;
+  status: string;
+  score: number;
+  rationale: string;
+  error?: string;
+}
+
 interface Window {
   go: {
     desktop: {
@@ -135,5 +143,9 @@ interface Window {
         SetDefaultAPIKey(id: string): Promise<void>;
       };
     };
+  };
+  runtime: {
+    EventsOn(eventName: string, callback: (...data: any[]) => void): () => void;
+    EventsOff(eventName: string, ...additionalEventNames: string[]): void;
   };
 }
