@@ -77,13 +77,18 @@ func New(provider llm.Provider, opts ...Option) *Evaluator {
 		maxTokens:   512,
 		retries:     1,
 		timeout:     60 * time.Second,
-		concurrency: 4,
+		concurrency: 1,
 	}
 	for _, o := range opts {
 		o(e)
 	}
 	return e
 }
+
+// ResultFunc is invoked once per persona as its evaluation completes. It may be
+// called concurrently from multiple goroutines, so implementations must be safe
+// for concurrent use.
+type ResultFunc func(domain.Evaluation)
 
 // Evaluate evaluates an idea against the given personas and returns an
 // aggregated FeasibilityScore. It returns an error when no personas are given,
@@ -92,6 +97,12 @@ func New(provider llm.Provider, opts ...Option) *Evaluator {
 // Summary and Verdict; a failed synthesis leaves those fields empty without
 // failing the run.
 func (e *Evaluator) Evaluate(ctx context.Context, idea domain.Idea, personas []domain.Persona, summarize bool) (domain.FeasibilityScore, error) {
+	return e.EvaluateWithProgress(ctx, idea, personas, summarize, nil)
+}
+
+// EvaluateWithProgress is like Evaluate but invokes onResult (if non-nil) as
+// each persona's result completes.
+func (e *Evaluator) EvaluateWithProgress(ctx context.Context, idea domain.Idea, personas []domain.Persona, summarize bool, onResult ResultFunc) (domain.FeasibilityScore, error) {
 	if len(personas) == 0 {
 		return domain.FeasibilityScore{}, ErrEmptyPersonas
 	}
@@ -109,6 +120,9 @@ func (e *Evaluator) Evaluate(ctx context.Context, idea domain.Idea, personas []d
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			results[i] = e.evaluatePersona(ctx, runID, now, idea, p)
+			if onResult != nil {
+				onResult(results[i])
+			}
 		}(i, p)
 	}
 	wg.Wait()

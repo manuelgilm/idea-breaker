@@ -481,27 +481,60 @@ function renderPersonaChecks(): void {
 async function runEvaluate(): Promise<void> {
   const out = $("evaluate-result");
   clear(out);
-  out.appendChild(el("div", "hint", "Evaluating…"));
+
+  const status = el("div", "hint", "Evaluating…");
+  const synthesis = el("div");
+  const grid = el("div", "persona-grid");
+  out.appendChild(status);
+  out.appendChild(synthesis);
+  out.appendChild(grid);
 
   const selected: string[] = [];
   document.querySelectorAll<HTMLInputElement>("#persona-checks input").forEach((c) => {
     if (c.checked) selected.push(c.value);
   });
   const summarize = (document.getElementById("summary-check") as HTMLInputElement).checked;
+  const total = selected.length > 0 ? selected.length : state.personas.length;
+
+  let received = 0;
+  const off = window.runtime.EventsOn("evaluation:persona", (result: PersonaResult) => {
+    status.textContent = "";
+    grid.appendChild(renderPersonaCard(result));
+    received++;
+    if (summarize && received >= total) {
+      status.textContent = "Synthesizing…";
+    }
+  });
 
   try {
     const score = await App.Evaluate(state.ideaId, selected, summarize);
-    clear(out);
-    out.appendChild(renderScore(score));
+    status.textContent = "";
+    synthesis.appendChild(renderSynthesis(score));
     await Promise.all([renderHistory(), loadCardsIfVisible()]);
   } catch (e) {
-    clear(out);
+    status.textContent = "";
     showError(String(e));
     const info = activeProviderInfo();
     if (info && !info.hasKey) {
       showError(`Evaluation failed: the active provider (${providerLabel(info.name)}) has no API key configured. Add one in the ${providerLabel(info.name)} settings.`);
     }
+  } finally {
+    off();
   }
+}
+
+function renderPersonaCard(p: PersonaResult): HTMLElement {
+  const card = el("div", "persona-card");
+  const head = el("div");
+  head.appendChild(el("span", "card-title", p.name));
+  head.appendChild(el("span", "persona-score", p.status === "success" ? `${p.score}/5` : "—"));
+  card.appendChild(head);
+  if (p.status === "success") {
+    card.appendChild(el("div", "card-body", p.rationale));
+  } else {
+    card.appendChild(el("div", "persona-error", p.error || "failed"));
+  }
+  return card;
 }
 
 function renderBreakdown(score: FeasibilityScore): HTMLElement {
@@ -518,17 +551,14 @@ function renderBreakdown(score: FeasibilityScore): HTMLElement {
   return breakdown;
 }
 
-function renderScore(score: FeasibilityScore): HTMLElement {
+function renderSynthesis(score: FeasibilityScore): HTMLElement {
   const root = el("div");
   const total = el("div", "score-total " + scoreColor(score.total), score.total.toFixed(1));
   root.appendChild(total);
   root.appendChild(el("div", "hint", `${score.responded}/${score.requested} personas responded · spread ${score.spread.toFixed(1)}`));
 
-  root.appendChild(renderBreakdown(score));
-
   if (score.verdict || score.summary) {
-    const v = el("div", "verdict", score.verdict ? `Verdict: ${score.verdict}` : "");
-    root.appendChild(v);
+    root.appendChild(el("div", "verdict", score.verdict ? `Verdict: ${score.verdict}` : ""));
     if (score.summary) root.appendChild(el("div", "hint", score.summary));
   }
   return root;

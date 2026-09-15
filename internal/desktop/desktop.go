@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	"github.com/wailsapp/wails/v2/pkg/runtime"
 	"github.com/zalando/go-keyring"
 
 	"aibreak/internal/domain"
@@ -74,12 +75,28 @@ func (keyringSecretStore) Delete(service, account string) error {
 	return keyring.Delete(service, account)
 }
 
+// EventEmitter lets the adapter push events to the frontend. The production
+// implementation wraps runtime.EventsEmit; tests inject a fake.
+type EventEmitter interface {
+	Emit(eventName string, data any)
+}
+
+// wailsEventEmitter emits events to the frontend via the Wails runtime.
+type wailsEventEmitter struct {
+	ctx context.Context
+}
+
+func (e wailsEventEmitter) Emit(eventName string, data any) {
+	runtime.EventsEmit(e.ctx, eventName, data)
+}
+
 // App is the Wails-bound application object.
 type App struct {
 	svc          *service.Service
 	router       ProviderRouter
 	secrets      SecretStore
 	fallbackKeys map[string]string
+	emitter      EventEmitter
 	ctx          context.Context
 }
 
@@ -97,6 +114,11 @@ func WithFallbackKeys(m map[string]string) Option {
 	return func(a *App) { a.fallbackKeys = m }
 }
 
+// WithEventEmitter overrides the Wails event emitter (tests).
+func WithEventEmitter(e EventEmitter) Option {
+	return func(a *App) { a.emitter = e }
+}
+
 // New creates the bound application around an already-wired service. The router
 // selects the active LLM provider and updates its API key at runtime; it may be
 // nil in tests that do not exercise the provider settings.
@@ -112,6 +134,21 @@ func New(svc *service.Service, router ProviderRouter, opts ...Option) *App {
 		o(a)
 	}
 	return a
+}
+
+// Startup captures the Wails application context (needed to emit events). It is
+// wired to the Wails OnStartup hook in cmd/aibreak-desktop/main.go.
+func (a *App) Startup(ctx context.Context) {
+	if a.emitter == nil {
+		a.emitter = wailsEventEmitter{ctx: ctx}
+	}
+}
+
+// emit pushes an event to the frontend if an emitter is configured.
+func (a *App) emit(eventName string, data any) {
+	if a.emitter != nil {
+		a.emitter.Emit(eventName, data)
+	}
 }
 
 // IdeaCard is an idea plus the total of its latest run (nil when unevaluated).
@@ -207,8 +244,42 @@ func (a *App) DeleteIdea(id string) error {
 
 // ---- Evaluation ----
 
+// PersonaResult is a single persona's outcome, streamed to the frontend as it
+// completes.
+type PersonaResult struct {
+	Name      string `json:"name"`
+	Status    string `json:"status"`
+	Score     int    `json:"score"`
+	Rationale string `json:"rationale"`
+	Error     string `json:"error,omitempty"`
+}
+
 func (a *App) Evaluate(ideaID string, personaIDs []string, summarize bool) (domain.FeasibilityScore, error) {
-	return a.svc.Evaluate(a.ctx, ideaID, personaIDs, summarize)
+	names, err := a.personaNames()
+	if err != nil {
+		return domain.FeasibilityScore{}, err
+	}
+	return a.svc.EvaluateWithProgress(a.ctx, ideaID, personaIDs, summarize, func(ev domain.Evaluation) {
+		a.emit("evaluation:persona", PersonaResult{
+			Name:      names[ev.PersonaID],
+			Status:    ev.Status,
+			Score:     ev.Score,
+			Rationale: ev.Rationale,
+			Error:     ev.Error,
+		})
+	})
+}
+
+func (a *App) personaNames() (map[string]string, error) {
+	personas, err := a.svc.ListPersonas(a.ctx)
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]string, len(personas))
+	for _, p := range personas {
+		names[p.ID] = p.Name
+	}
+	return names, nil
 }
 
 func (a *App) ListRuns(ideaID string) ([]domain.FeasibilityScore, error) {

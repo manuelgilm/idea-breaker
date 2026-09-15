@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -163,6 +164,54 @@ func TestEvaluateAndListRuns(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, runs, 1)
 	assert.Equal(t, score.RunID, runs[0].RunID)
+}
+
+// recordingEmitter captures emitted events; onResult calls are concurrent, so
+// access is synchronized.
+type recordingEmitter struct {
+	mu     sync.Mutex
+	events map[string][]any
+}
+
+func (r *recordingEmitter) Emit(name string, data any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events[name] = append(r.events[name], data)
+}
+
+func TestEvaluateStreamsPersonaResults(t *testing.T) {
+	app := newTestApp(t, scripted(map[string]int{"critic": 4, "buddy": 2}))
+	emitter := &recordingEmitter{events: map[string][]any{}}
+	app.emitter = emitter
+
+	idea, _, err := app.svc.CreateIdea(context.Background(), "Test idea", "", nil)
+	require.NoError(t, err)
+	critic, err := app.svc.CreatePersona(context.Background(), "Critic", "marker-critic", 1)
+	require.NoError(t, err)
+	buddy, err := app.svc.CreatePersona(context.Background(), "Buddy", "marker-buddy", 1)
+	require.NoError(t, err)
+
+	score, err := app.Evaluate(idea.ID, []string{critic.ID, buddy.ID}, false)
+	require.NoError(t, err)
+	assert.Equal(t, 2, score.Responded)
+
+	emitter.mu.Lock()
+	events := emitter.events["evaluation:persona"]
+	emitter.mu.Unlock()
+	require.Len(t, events, 2)
+
+	got := map[string]PersonaResult{}
+	for _, data := range events {
+		pr := data.(PersonaResult)
+		got[pr.Name] = pr
+	}
+	require.Contains(t, got, "Critic")
+	require.Contains(t, got, "Buddy")
+	assert.Equal(t, "success", got["Critic"].Status)
+	assert.Equal(t, 4, got["Critic"].Score)
+	assert.Equal(t, "ok", got["Critic"].Rationale)
+	assert.Equal(t, "success", got["Buddy"].Status)
+	assert.Equal(t, 2, got["Buddy"].Score)
 }
 
 func TestListPersonasMarksBuiltins(t *testing.T) {

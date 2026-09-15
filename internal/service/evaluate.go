@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"aibreak/internal/domain"
+	"aibreak/internal/engine"
 )
 
 // Evaluate evaluates an idea with the selected personas (all personas when
@@ -12,6 +13,12 @@ import (
 // When summarize is true, an additional best-effort synthesis pass populates
 // Summary and Verdict on the score.
 func (s *Service) Evaluate(ctx context.Context, ideaID string, personaIDs []string, summarize bool) (domain.FeasibilityScore, error) {
+	return s.EvaluateWithProgress(ctx, ideaID, personaIDs, summarize, nil)
+}
+
+// EvaluateWithProgress is like Evaluate but invokes onResult (if non-nil) as
+// each persona's result completes.
+func (s *Service) EvaluateWithProgress(ctx context.Context, ideaID string, personaIDs []string, summarize bool, onResult engine.ResultFunc) (domain.FeasibilityScore, error) {
 	idea, err := s.store.GetIdea(ctx, ideaID)
 	if err != nil {
 		return domain.FeasibilityScore{}, err
@@ -38,7 +45,7 @@ func (s *Service) Evaluate(ctx context.Context, ideaID string, personaIDs []stri
 		}
 	}
 
-	score, err := s.evaluator.Evaluate(ctx, idea, personas, summarize)
+	score, err := s.evaluator.EvaluateWithProgress(ctx, idea, personas, summarize, onResult)
 	if err != nil {
 		return domain.FeasibilityScore{}, err
 	}

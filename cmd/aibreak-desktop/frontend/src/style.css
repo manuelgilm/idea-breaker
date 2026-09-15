@@ -177,6 +177,32 @@ label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px
 .eval-line { padding: 4px 0; border-bottom: 1px dashed var(--border); }
 .eval-line:last-child { border-bottom: none; }
 
+.persona-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-top: 12px;
+}
+.persona-card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.persona-card > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.persona-card .card-title { font-weight: 600; font-size: 14px; }
+.persona-card .persona-score { font-weight: 700; color: var(--accent); }
+.persona-card .card-body { color: var(--muted); font-size: 13px; }
+.persona-card .persona-error { color: var(--red); font-size: 13px; }
+
 .error-banner {
   background: var(--elevated);
   border: 1px solid var(--red);
