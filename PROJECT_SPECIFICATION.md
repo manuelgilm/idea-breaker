@@ -920,7 +920,10 @@ default key applied to the running provider (see §9).
   panel (persona checkboxes + a summary toggle + Evaluate; the Evaluate button
   is disabled and a warning shown until the active provider has an API key),
   **History** (past runs; selecting a run expands its per-persona breakdown),
-  and **Feedback** (list + add + delete).
+  and **Feedback** (list + add + delete). The Evaluate panel renders results
+  **progressively**: each persona's result (name, score, rationale, or error) is
+  streamed to the UI as soon as it completes, and the total, spread, verdict,
+  and summary are revealed only once the whole run finishes.
 - **Personas** — lists all personas with their `Name`, generated `ID`, and
   auto-incremented `Version`; built-ins are marked read-only, custom personas
   can be created, edited (each edit bumps the version), and deleted.
@@ -958,6 +961,12 @@ The latest run is the one with the greatest `RunID` (ULIDs are time-ordered;
   the results show the total, spread, breakdown, and — when synthesis was
   requested — the verdict and summary, and the card's dot reflects the new
   total.
+- **Given** a running evaluation, **When** a persona's result completes, **Then**
+  that persona's result (name, score, and rationale, or its error) is displayed
+  immediately, before the remaining personas finish.
+- **Given** synthesis requested and a running evaluation, **When** all selected
+  persona results have arrived, **Then** the view shows a synthesizing indicator
+  until the total, verdict, and summary are returned.
 - **Given** an idea with past runs, **When** the history view loads, **Then**
   it shows each run's total, spread, and verdict (when present).
 - **Given** a past run, **When** the user selects it, **Then** the run's

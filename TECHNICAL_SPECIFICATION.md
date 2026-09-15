@@ -39,8 +39,9 @@ cmd/aibreakd (API adapter) ──┤
 
 - **`internal/engine`** — pure, no I/O. Imports `internal/domain` and
   `internal/llm` (interface) plus stdlib. Two-stage flow: (1) persona
-  evaluation + scoring (parallel); (2) an optional sequential synthesize pass
-  that consumes the `FeasibilityScore` and writes `Summary`/`Verdict`.
+  evaluation + scoring (serial by default, see §8); (2) an optional sequential
+  synthesize pass that consumes the `FeasibilityScore` and writes
+  `Summary`/`Verdict`.
 - **`internal/service`** — application layer. Orchestrates `engine` +
   `registry.Store`; owns validation, run grouping, auto-persist, cascade logic.
 - **`internal/llm`** — defines `Provider` (and `KeyedProvider`); `openai` and
@@ -214,6 +215,24 @@ the `settings` table and applied at startup via `ApplySettings`. `app.Build`
 (CLI/API) returns a single `llm.KeyedProvider`; `app.BuildDesktop` returns the
 `llm.Switchable` so the desktop can switch providers at runtime.
 
+**Streaming evaluation** (progressive results). The adapter streams each
+persona's result to the frontend as it completes rather than returning only the
+final aggregate. `engine.Evaluator.EvaluateWithProgress` takes an
+`onResult func(domain.Evaluation)` callback invoked (from each persona's
+goroutine) the moment that persona's `Evaluation` is produced, before
+aggregation; `service.EvaluateWithProgress` threads it through and
+`service.Evaluate` delegates with `nil`, so CLI/API behavior is unchanged. The
+desktop `Evaluate` binding resolves persona IDs to names (via `ListPersonas`)
+and emits a Wails `evaluation:persona` event carrying a `PersonaResult`
+`{name, status, score, rationale, error}` DTO for each completion; the aggregate
+(total, spread, verdict, summary) is delivered only by the bound method's return
+value, which the frontend renders last. Wails events require the application
+`context.Context` (they carry the `events` service in the context value), so the
+adapter captures it in a `Startup(ctx)` method wired to the Wails `OnStartup`
+hook and wraps `runtime.EventsEmit` behind an `EventEmitter` interface (default
+`wailsEventEmitter`; faked in tests) so the bound method is testable without a
+Wails runtime.
+
 ## 6. Error model
 
 Typed errors in `service`, mapped to the API envelope codes (spec §8):
@@ -267,14 +286,18 @@ Resolved product-spec decisions recorded here:
 ## 8. Concurrency & context
 
 - All `Store`/`Provider`/service methods take `context.Context`.
-- Persona evaluations within a run execute **concurrently** with bounded
-  parallelism (semaphore, max 4 in flight).
+- Persona evaluations within a run execute **serially** by default
+  (concurrency 1, tunable via `engine.WithConcurrency`) so results stream to the
+  desktop one-by-one in request order; the semaphore caps in-flight evaluations
+  at the configured limit.
 - `AIBREAK_LLM_TIMEOUT` is a **per-call** deadline: each `Provider.Complete`
   gets its own timeout via `context.WithTimeout`. There is no separate
   whole-run timeout in v1.
 - Results are assembled deterministically: the `FeasibilityScore.Breakdown` is
   ordered by the requested persona order regardless of completion order, so
-  CLI/API output and tests are stable.
+  CLI/API output and tests are stable. Streaming `onResult` calls, by contrast,
+  arrive in completion order (they are emitted from each persona's goroutine);
+  consumers must not assume request order.
 - When synthesis is requested, it runs as a **single sequential call after the
   persona stage completes** (it consumes the aggregate, so it cannot run in
   parallel with it). The same per-call timeout applies.
