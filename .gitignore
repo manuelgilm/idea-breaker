@@ -20,6 +20,7 @@ vendor/
 # Local env / secrets
 .env
 .env.*
+!.env.example
 
 # Editors
 .vscode/
@@ -48,3 +49,9 @@ wailsjs/
 # so `go:embed all:frontend/dist` compiles on a fresh clone.
 cmd/aibreak-desktop/frontend/dist/*
 !cmd/aibreak-desktop/frontend/dist/.gitkeep
+
+# Embedded web UI assets (rebuilt by `make web-build`); the committed
+# index.html placeholder keeps `go:embed all:dist` compiling on a fresh clone.
+internal/webui/dist/main.js
+internal/webui/dist/client.js
+internal/webui/dist/style.css
