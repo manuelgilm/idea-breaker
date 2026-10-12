@@ -1,0 +1,33 @@
+# aibreak web service — one container serving the SPA + JSON API.
+#
+#   docker compose up --build
+#
+# Keys come from the environment (there is no keyring on a server). Set them in
+# a .env file next to this compose file, or in Coolify's environment settings.
+services:
+  aibreak:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: aibreak:latest
+    restart: unless-stopped
+    environment:
+      AIBREAK_ADDR: ":8080"
+      AIBREAK_DB: /data/aibreak.db
+      AIBREAK_LLM_PROVIDER: ${AIBREAK_LLM_PROVIDER:-openai}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      AIBREAK_LLM_MODEL: ${AIBREAK_LLM_MODEL:-gpt-4o-mini}
+      AIBREAK_GEMINI_MODEL: ${AIBREAK_GEMINI_MODEL:-gemini-3.8-flash}
+    volumes:
+      - aibreak-data:/data
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  aibreak-data:

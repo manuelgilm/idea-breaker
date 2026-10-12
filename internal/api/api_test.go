@@ -28,13 +28,31 @@ func (fixedProvider) Complete(ctx context.Context, req llm.Request) (llm.Respons
 	return llm.Response{Content: `{"score":3,"rationale":"ok"}`}, nil
 }
 
-func newTestHandler(t *testing.T) http.Handler {
+type fakeRouter struct {
+	names  []string
+	active string
+	models map[string]string
+}
+
+func (r *fakeRouter) Names() []string             { return r.names }
+func (r *fakeRouter) Active() string              { return r.active }
+func (r *fakeRouter) SetActive(name string)       { r.active = name }
+func (r *fakeRouter) Model(name string) string    { return r.models[name] }
+func (r *fakeRouter) SetModel(name, model string) { r.models[name] = model }
+
+func newTestServer(t *testing.T, opts ...Option) (*Server, *service.Service) {
 	t.Helper()
 	store, err := sqlite.Open(":memory:")
 	require.NoError(t, err)
 	t.Cleanup(func() { store.Close() })
 	svc := service.New(store, engine.New(fixedProvider{}))
-	return New(svc).Handler()
+	return New(svc, opts...), svc
+}
+
+func newTestHandler(t *testing.T) http.Handler {
+	t.Helper()
+	srv, _ := newTestServer(t)
+	return srv.Handler()
 }
 
 func doJSON(t *testing.T, h http.Handler, method, path string, body any) *httptest.ResponseRecorder {
@@ -227,4 +245,144 @@ func TestUpdatePersona(t *testing.T) {
 		"name": "Nope",
 	})
 	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestHealthz(t *testing.T) {
+	h := newTestHandler(t)
+	rec := doJSON(t, h, http.MethodGet, "/healthz", nil)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	body := decode[map[string]string](t, rec)
+	assert.Equal(t, "ok", body["status"])
+}
+
+func TestIdeaCards(t *testing.T) {
+	h := newTestHandler(t)
+	rec := doJSON(t, h, http.MethodPost, "/v1/ideas", map[string]any{"title": "X"})
+	idea := decode[domain.Idea](t, rec)
+
+	rec = doJSON(t, h, http.MethodGet, "/v1/ideas/cards", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	cards := decode[[]IdeaCard](t, rec)
+	require.Len(t, cards, 1)
+	assert.Equal(t, idea.ID, cards[0].ID)
+	assert.Nil(t, cards[0].Score, "no run yet")
+
+	doJSON(t, h, http.MethodPost, "/v1/ideas/"+idea.ID+"/evaluate", nil)
+
+	rec = doJSON(t, h, http.MethodGet, "/v1/ideas/cards", nil)
+	cards = decode[[]IdeaCard](t, rec)
+	require.Len(t, cards, 1)
+	require.NotNil(t, cards[0].Score)
+	assert.Equal(t, 60.0, *cards[0].Score)
+}
+
+func TestProviders(t *testing.T) {
+	router := &fakeRouter{
+		names:  []string{"openai", "gemini"},
+		active: "openai",
+		models: map[string]string{"openai": "gpt-4o-mini", "gemini": "gemini-3.8-flash"},
+	}
+	srv, _ := newTestServer(t, WithProviderRouter(router), WithFallbackKeys(map[string]string{"openai": "sk-x"}))
+	h := srv.Handler()
+
+	rec := doJSON(t, h, http.MethodGet, "/v1/providers", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	infos := decode[[]ProviderInfo](t, rec)
+	require.Len(t, infos, 2)
+	assert.Equal(t, "openai", infos[0].Name)
+	assert.True(t, infos[0].Active)
+	assert.True(t, infos[0].HasKey)
+	assert.Equal(t, "gemini-3.8-flash", infos[1].Model)
+	assert.False(t, infos[1].HasKey)
+}
+
+func TestUpdateProvider(t *testing.T) {
+	router := &fakeRouter{
+		names:  []string{"openai", "gemini"},
+		active: "openai",
+		models: map[string]string{"openai": "gpt-4o-mini", "gemini": "gemini-3.8-flash"},
+	}
+	srv, svc := newTestServer(t, WithProviderRouter(router))
+	h := srv.Handler()
+
+	rec := doJSON(t, h, http.MethodPut, "/v1/providers/openai", map[string]any{"model": "gpt-4o"})
+	require.Equal(t, http.StatusOK, rec.Code)
+	info := decode[ProviderInfo](t, rec)
+	assert.Equal(t, "gpt-4o", info.Model)
+	assert.Equal(t, "gpt-4o", router.models["openai"])
+
+	rec = doJSON(t, h, http.MethodPut, "/v1/providers/gemini", map[string]any{"active": true})
+	require.Equal(t, http.StatusOK, rec.Code)
+	_ = decode[ProviderInfo](t, rec)
+	assert.Equal(t, "gemini", router.active)
+
+	rec = doJSON(t, h, http.MethodGet, "/v1/providers", nil)
+	infos := decode[[]ProviderInfo](t, rec)
+	require.Len(t, infos, 2)
+	var gemini ProviderInfo
+	for _, i := range infos {
+		if i.Name == "gemini" {
+			gemini = i
+		}
+	}
+	assert.True(t, gemini.Active, "gemini now active")
+
+	active, err := svc.GetSetting(context.Background(), "active_provider")
+	require.NoError(t, err)
+	assert.Equal(t, "gemini", active, "active provider persisted")
+}
+
+func TestUpdateUnknownProvider(t *testing.T) {
+	router := &fakeRouter{names: []string{"openai"}, active: "openai", models: map[string]string{}}
+	srv, _ := newTestServer(t, WithProviderRouter(router))
+	h := srv.Handler()
+
+	rec := doJSON(t, h, http.MethodPut, "/v1/providers/nope", map[string]any{"model": "x"})
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+}
+
+func TestEvaluateStream(t *testing.T) {
+	h := newTestHandler(t)
+	rec := doJSON(t, h, http.MethodPost, "/v1/ideas", map[string]any{"title": "X"})
+	idea := decode[domain.Idea](t, rec)
+
+	rec = doJSON(t, h, http.MethodPost, "/v1/ideas/"+idea.ID+"/evaluate/stream", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, "text/event-stream", rec.Header().Get("Content-Type"))
+	assert.Equal(t, "no", rec.Header().Get("X-Accel-Buffering"))
+
+	body := rec.Body.String()
+	assert.Equal(t, 3, strings.Count(body, "event: persona"))
+	assert.Contains(t, body, "event: done")
+	assert.Contains(t, body, `"total":60`)
+}
+
+func TestEvaluateStreamUnknownIdea(t *testing.T) {
+	h := newTestHandler(t)
+	rec := doJSON(t, h, http.MethodPost, "/v1/ideas/nope/evaluate/stream", nil)
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	assert.NotEqual(t, "text/event-stream", rec.Header().Get("Content-Type"))
+}
+
+func TestEvaluateStreamAllFail(t *testing.T) {
+	store, err := sqlite.Open(":memory:")
+	require.NoError(t, err)
+	t.Cleanup(func() { store.Close() })
+	svc := service.New(store, engine.New(alwaysFailProvider{}))
+	h := New(svc).Handler()
+
+	rec := doJSON(t, h, http.MethodPost, "/v1/ideas", map[string]any{"title": "X"})
+	idea := decode[domain.Idea](t, rec)
+
+	rec = doJSON(t, h, http.MethodPost, "/v1/ideas/"+idea.ID+"/evaluate/stream", nil)
+	require.Equal(t, http.StatusOK, rec.Code)
+	body := rec.Body.String()
+	assert.Contains(t, body, "event: error")
+	assert.NotContains(t, body, "event: done")
+}
+
+type alwaysFailProvider struct{}
+
+func (alwaysFailProvider) Complete(ctx context.Context, req llm.Request) (llm.Response, error) {
+	return llm.Response{}, llm.ErrProvider
 }

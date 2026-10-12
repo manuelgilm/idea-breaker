@@ -2,6 +2,7 @@
 package app
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -115,4 +116,24 @@ func ensureDir(dir string) error {
 		return nil
 	}
 	return os.MkdirAll(dir, 0o755)
+}
+
+// ApplySettings loads the persisted provider settings (active provider and
+// per-provider models) into the router, overriding the config/env defaults.
+// It is used by the web service at startup so provider switches made through
+// the API survive a restart.
+func ApplySettings(ctx context.Context, svc *service.Service, router *llm.Switchable) error {
+	if p, err := svc.GetSetting(ctx, "active_provider"); err != nil {
+		return err
+	} else if p != "" {
+		router.SetActive(p)
+	}
+	for _, name := range router.Names() {
+		if m, err := svc.GetSetting(ctx, name+".model"); err != nil {
+			return err
+		} else if m != "" {
+			router.SetModel(name, m)
+		}
+	}
+	return nil
 }

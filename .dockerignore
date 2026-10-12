@@ -1,0 +1,28 @@
+.git
+.github
+.opencode
+.gitignore
+
+# Build artifacts
+/aibreak
+/aibreakd
+/bin
+*.test
+*.out
+coverage.*
+
+# Node
+**/node_modules
+
+# SPA outputs (rebuilt inside the image from source)
+**/dist
+cmd/aibreak-desktop/build/bin
+
+# Runtime databases / secrets
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+.env
+.env.*
