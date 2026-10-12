@@ -758,10 +758,12 @@ The API has **no authentication** (single-user local tool, §1). It binds to
 |--------|---------------------|--------------------------------|---------|
 | POST   | `/v1/ideas`         | Create an idea                 | 201     |
 | GET    | `/v1/ideas`         | List ideas (`?tag=` filter)    | 200     |
+| GET    | `/v1/ideas/cards`   | List ideas with latest score   | 200     |
 | GET    | `/v1/ideas/{id}`    | Get an idea                    | 200     |
 | PATCH  | `/v1/ideas/{id}`    | Update an idea                 | 200     |
 | DELETE | `/v1/ideas/{id}`    | Delete an idea                 | 204     |
 | POST   | `/v1/ideas/{id}/evaluate` | Evaluate an idea       | 200     |
+| POST   | `/v1/ideas/{id}/evaluate/stream` | Evaluate an idea, streaming progress over SSE | 200 (`text/event-stream`) |
 | GET    | `/v1/ideas/{id}/evaluations` | List evaluation history | 200  |
 | POST   | `/v1/ideas/{id}/feedback` | Add human feedback      | 201     |
 | GET    | `/v1/ideas/{id}/feedback` | List human feedback     | 200     |
@@ -773,6 +775,9 @@ The API has **no authentication** (single-user local tool, §1). It binds to
 | POST   | `/v1/personas`      | Create a custom persona        | 201     |
 | PATCH  | `/v1/personas/{id}` | Update a custom persona        | 200     |
 | DELETE | `/v1/personas/{id}` | Delete a custom persona        | 204     |
+| GET    | `/v1/providers`     | List LLM providers (active, model, key status) | 200 |
+| PUT    | `/v1/providers/{name}` | Set the active provider and/or its model | 200 |
+| GET    | `/healthz`          | Liveness probe                 | 200     |
 
 ### Error codes
 
@@ -812,6 +817,35 @@ Request bodies mirror the domain model (§2) with the required fields noted.
   objects (each with `run_id`, `total`, `requested`, `responded`, `spread`,
   `summary`, `verdict`, and a `breakdown` of evaluations), ordered by `run_id`
   ascending.
+- `GET /v1/ideas/cards` → `200` JSON array of idea cards (idea fields plus
+  `score`: the latest run's `Total`, or `null` when the idea has no runs),
+  ordered like `GET /v1/ideas` (by `Created` descending).
+- `GET /v1/providers` → `200` JSON array of provider descriptors
+  `{ "name", "model", "active", "has_key" }`, where `has_key` is true when a
+  usable API key exists for that provider (see §9 and §12).
+- `PUT /v1/providers/{name}` — `{ "model"?: string, "active"?: bool }` →
+  `200` the updated provider descriptor. A non-empty `model` sets and persists
+  that provider's model; `"active": true` makes it the active provider
+  (persisted, overriding the config default on the next start). An unknown
+  provider name returns `404` `not_found`; an empty `model` returns `400`
+  `validation_error`.
+- `POST /v1/ideas/{id}/evaluate/stream` — same request body as
+  `POST /v1/ideas/{id}/evaluate` → `200` with `Content-Type:
+  text/event-stream`, `Cache-Control: no-cache`, and `X-Accel-Buffering: no`
+  (so reverse proxies do not buffer). The server emits:
+  - one `persona` event per persona as it completes, with data
+    `{ "name", "status", "score", "rationale", "error"? }` (the same shape the
+    desktop streams), including failed personas; then
+  - a final `done` event whose data is the full `FeasibilityScore`, when the
+    run produced an aggregate; or
+  - a final `error` event whose data is the error envelope when the run failed
+    (e.g. all personas failed → code `llm_error`), in which case no `done`
+    event is sent.
+
+  Validation that fails before the run starts (e.g. an unknown idea id or an
+  invalid body) returns the normal non-streaming error status (`404`/`400`)
+  with the JSON error envelope instead of starting the stream.
+- `GET /healthz` → `200` `{ "status": "ok" }` (liveness only; no store access).
 - Other list endpoints return JSON arrays.
 
 ### Acceptance criteria
@@ -848,6 +882,27 @@ Request bodies mirror the domain model (§2) with the required fields noted.
   **Then** it returns `201` with the stored resource body.
 - **Given** an invalid request body, **When** handled, **Then** it returns `400`
   with code `validation_error`.
+- **Given** ideas, some with past runs, **When** `GET /v1/ideas/cards` is
+  handled, **Then** it returns `200` and each card carries the idea's latest
+  run `total` as `score` (or `null` when it has no runs).
+- **Given** a configured service, **When** `GET /v1/providers` is handled,
+  **Then** it returns `200` with one descriptor per supported provider, flagging
+  the active one and whether it has a usable key.
+- **Given** a `PUT /v1/providers/openai` with `{"model":"gpt-4o"}`, **When**
+  handled, **Then** it returns `200` and the model is persisted; a subsequent
+  `GET /v1/providers` reports the new model.
+- **Given** a `PUT /v1/providers/openai` with `{"active": true}`, **When**
+  handled, **Then** it returns `200` and a subsequent `GET /v1/providers`
+  reports `openai` as active.
+- **Given** a `PUT /v1/providers/unknown`, **When** handled, **Then** it
+  returns `404` with code `not_found`.
+- **Given** `POST /v1/ideas/{id}/evaluate/stream` with a mocked provider,
+  **When** handled, **Then** the response is `200 text/event-stream` and the
+  body contains one `persona` event per persona followed by a `done` event.
+- **Given** `POST /v1/ideas/{unknown}/evaluate/stream`, **When** handled,
+  **Then** it returns `404` with the JSON error envelope and no stream.
+- **Given** `GET /healthz`, **When** handled, **Then** it returns `200` with
+  `{"status":"ok"}`.
 
 ## 9. Configuration
 
@@ -998,3 +1053,66 @@ The latest run is the one with the greatest `RunID` (ULIDs are time-ordered;
 - Authentication (the welcome screen is only the seam).
 - Base-URL / temperature settings in the UI (config-file/env only).
 - LLM providers beyond OpenAI and Gemini.
+
+## 12. Web service (aibreakd + web UI)
+
+`aibreakd` serves both the JSON API (§8) and a **browser UI**. The UI is the
+same single-page frontend as the desktop app (vanilla TS) — built once and
+embedded into the `aibreakd` binary — and it talks to the same `/v1/` endpoints
+over HTTP, with Server-Sent Events for progress. The desktop app is unchanged:
+it binds the service in-process via Wails and keeps its OS-keyring key
+management. The web service introduces **no new domain behavior**; every view
+maps to existing service/API operations.
+
+### Hosting model
+
+- A single process/container; it binds `AIBREAK_ADDR` (default
+  `127.0.0.1:8080`).
+- The SPA is served at `/`; the API lives under `/v1/`. An extensionless,
+  non-`/v1` path that is not a static file returns the SPA entrypoint
+  (`index.html`) so client-side navigation works. A path whose last segment has
+  a file extension (e.g. `main.js`) that does not exist returns `404` — a
+  missing asset is never mis-served as HTML.
+- It remains **private and single-user** (§1 non-goals hold): the API has no
+  authentication of its own. A deployment MAY gate access at the reverse proxy
+  (e.g. HTTP basic auth).
+- Deployment target: a self-hosted Docker host managed by **Coolify** (the
+  image/compose mechanics are in the technical spec).
+
+### API keys in the web service
+
+- There is **no OS keyring** on a server. Provider API keys come only from
+  configuration (`OPENAI_API_KEY` / `GEMINI_API_KEY`, env or config file; §9).
+- The provider view is **read-only with respect to keys**: it lists providers
+  with `active`, `model`, and `has_key`, and it allows **switching the active
+  provider** and **editing the model** (persisted, §9). It does not add, delete,
+  or set-default keys — keys are rotated by changing the deployment's
+  environment and restarting.
+
+### Progressive evaluation (SSE)
+
+- Evaluation streams each persona's result to the browser as it completes, then
+  delivers the aggregate, mirroring the desktop UX (§11). This uses
+  `POST /v1/ideas/{id}/evaluate/stream` (§8).
+
+### Persistence
+
+- SQLite on a mounted volume (`AIBREAK_DB`). The service runs a **single
+  replica**; SQLite is single-writer.
+
+### Acceptance criteria
+
+- **Given** a built `aibreakd`, **When** `GET /` is requested, **Then** it
+  returns the SPA `index.html`.
+- **Given** a built `aibreakd`, **When** an unknown non-`/v1` path is requested,
+  **Then** it returns the SPA entrypoint (so client-side navigation works).
+- **Given** a built `aibreakd`, **When** a missing asset path (a last segment
+  with a file extension, e.g. `/missing.js`) is requested, **Then** it returns
+  `404` (not the SPA entrypoint).
+- **Given** the web provider view, **When** it loads, **Then** each provider
+  shows `active`, `model`, and `has_key`, and no key-mutation controls are
+  offered.
+- **Given** the web UI, **When** an evaluation runs, **Then** persona results
+  render as they arrive and the total/verdict/summary render when the run
+  completes (the §11 progressive acceptance criteria hold identically for the
+  web surfaces).

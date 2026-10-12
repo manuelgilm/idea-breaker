@@ -22,7 +22,8 @@ Layered, dependency rule = **depend inward only**:
 
 ```
 cmd/aibreak  (CLI adapter) ──┐
-cmd/aibreakd (API adapter) ──┤
+cmd/aibreakd (API + web)  ──┤
+cmd/aibreak-desktop (Wails) ─┤
                               ▼
                        internal/service   (orchestration)
                               │
@@ -49,6 +50,9 @@ cmd/aibreakd (API adapter) ──┤
 - **`internal/registry`** — defines `Store`; `sqlite` subpackage implements it
   plus migrations and built-in persona seeding.
 - **`internal/cli` / `internal/api`** — thin adapters over `service`.
+- **`internal/webui`** — embeds the built SPA (`//go:embed all:dist`) and serves
+  it at `/` with an SPA fallback; mounted by `cmd/aibreakd` alongside the JSON
+  API. Contains no domain logic.
 - **`internal/config`** — loads configuration (see §7).
 
 Wire-up happens in `cmd/*/main.go` (composition root). No package reaches
@@ -66,17 +70,20 @@ aibreak/
 ├── AGENTS.md
 ├── go.mod
 ├── Makefile
+├── Dockerfile                 # multi-stage: build SPA + embed into aibreakd
+├── docker-compose.yaml        # Coolify/Compose deployment (volume, healthcheck)
+├── .dockerignore
 ├── cmd/
 │   ├── aibreak/main.go        # CLI entrypoint
-│   ├── aibreakd/main.go       # HTTP server entrypoint
+│   ├── aibreakd/main.go       # HTTP server + web UI entrypoint
 │   └── aibreak-desktop/       # self-contained Wails project: `wails build`
 │       │                      # and `wails dev` run from THIS directory, since
 │       │                      # Wails always builds the package in cwd
 │       ├── main.go            # desktop app entrypoint
 │       ├── wails.json         # Wails project config (frontend paths relative here)
-│       └── frontend/          # desktop UI: vanilla TS + minimal CSS
+│       └── frontend/          # shared UI: vanilla TS + minimal CSS
 │           ├── index.html
-│           ├── src/
+│           ├── src/           # main.ts + client.ts (transport) + app.d.ts
 │           └── tsconfig.json
 └── internal/
     ├── domain/                # shared types (Idea, Persona, Evaluation, ...)
@@ -85,7 +92,8 @@ aibreak/
     ├── llm/                   # Provider iface + openai/ + gemini/ impls
     ├── registry/              # Store iface + sqlite/ impl + migrations/
     ├── cli/                   # cobra commands
-    ├── api/                   # net/http handlers + router
+    ├── api/                   # net/http handlers + router (+ SSE)
+    ├── webui/                 # embedded SPA (dist/) + SPA-fallback handler
     ├── desktop/               # Wails bindings over service (thin adapter)
     └── config/                # config loading
 ```
@@ -105,6 +113,8 @@ aibreak/
 | Keyring    | `github.com/zalando/go-keyring` | OS credential store for the desktop OpenAI API key (Secret Service/Keychain/Credential Manager). |
 | LLM client | plain `net/http`              | Avoid heavyweight SDK; the provider contract is small. |
 | Desktop    | Wails v2 + vanilla TS         | Native-feeling local app; Go backend binds `service` in-process, no HTTP hop. Vanilla TS + minimal CSS keeps the bundle tiny; `tsc --noEmit` is the frontend check. |
+| Web UI     | same vanilla TS bundle, embedded in `aibreakd` | One frontend for both surfaces: a transport module (`client.ts`) picks Wails bindings when `window.go` exists, else `fetch` + SSE against `/v1/`. `internal/webui` serves it with `//go:embed`. |
+| Container  | Docker multi-stage + distroless | Node builds the SPA, Go (`CGO_ENABLED=0`) embeds it; deployed via Coolify (Compose) with a persistent volume for SQLite. |
 
 No ORM, no web framework, no DI framework.
 
@@ -212,8 +222,11 @@ persistence. Each key's secret lives in the keyring under account
 `<provider>:<keyID>`; the adapter generates the key ID (ULID) and orchestrates
 secret + metadata. The active provider and per-provider models are persisted in
 the `settings` table and applied at startup via `ApplySettings`. `app.Build`
-(CLI/API) returns a single `llm.KeyedProvider`; `app.BuildDesktop` returns the
-`llm.Switchable` so the desktop can switch providers at runtime.
+(CLI) returns a single `llm.KeyedProvider`; `app.BuildDesktop` returns the
+`llm.Switchable` and is used by both the desktop app and the web service
+(`cmd/aibreakd`) so they can switch providers at runtime; `app.ApplySettings`
+loads the persisted active provider/models into the router at boot (used by the
+web service).
 
 **Streaming evaluation** (progressive results). The adapter streams each
 persona's result to the frontend as it completes rather than returning only the
@@ -232,6 +245,36 @@ adapter captures it in a `Startup(ctx)` method wired to the Wails `OnStartup`
 hook and wraps `runtime.EventsEmit` behind an `EventEmitter` interface (default
 `wailsEventEmitter`; faked in tests) so the bound method is testable without a
 Wails runtime.
+
+**HTTP API additions for the web UI** (`internal/api`). The API gains endpoints
+the browser UI needs on top of the §8 CRUD surface:
+`GET /v1/ideas/cards` (idea + latest-run `score`, mirroring the desktop
+`ListIdeaCards`), `GET /v1/providers` and `PUT /v1/providers/{name}` (provider
+descriptor with `active`/`model`/`has_key`, provider switch and model update),
+and `POST /v1/ideas/{id}/evaluate/stream` (SSE). The API server is constructed
+with the same `ProviderRouter` interface and config fallback keys the desktop
+adapter uses (`app.BuildDesktop`), so no keyring is involved: `has_key` is true
+when a configured `OPENAI_API_KEY`/`GEMINI_API_KEY` exists. The SSE handler
+drives `service.EvaluateWithProgress`, writing one `persona` event per callback
+(including failures) and a final `done` (aggregate) or `error` event, flushing
+after each; it sets `X-Accel-Buffering: no`/`Cache-Control: no-cache`.
+`cmd/aibreakd` also serves `GET /healthz` and mounts `internal/webui`.
+
+**Web UI** (`internal/webui` + the shared frontend). `internal/webui` embeds the
+built SPA (`//go:embed all:dist`) and serves it at `/`, returning `index.html`
+for any non-`/v1`, non-asset path (SPA fallback). The frontend gains a
+`src/client.ts` transport module exposing one `Client` interface with two
+implementations: a **Wails adapter** (used by the desktop binary when
+`window.go` exists) and an **HTTP adapter** (`fetch` to `/v1/`; the SSE endpoint
+is consumed with a streaming `fetch` + manual `text/event-stream` parse). The
+rendering code in `main.ts` is transport-agnostic; the SSE subscription returns
+an unsubscribe function, replacing `window.runtime.EventsOn`. This keeps one
+frontend serving both the desktop and the web service. The frontend ships as
+native ES modules (no bundler), so **relative imports must include the file
+extension** (`import ... from "./client.js"`); `tsc` emits the import specifier
+verbatim, and a browser rejects an extensionless specifier. `internal/webui`
+serves an extensionless, unknown path as the SPA entrypoint, but returns `404`
+for an unknown path whose last segment has a file extension (missing asset).
 
 ## 6. Error model
 
@@ -270,6 +313,11 @@ Precedence (spec §9): **flags > env vars > config file > defaults**.
   **per-provider model** in the `settings` table (via
   `internal/desktop.ApplySettings`), which override the config/env defaults on
   launch.
+- The **web service** (`cmd/aibreakd`) uses `app.BuildDesktop` (the
+  `llm.Switchable` router) but **no keyring**: provider keys come only from
+  `OPENAI_API_KEY` / `GEMINI_API_KEY` (config/env). Its provider endpoints may
+  switch the active provider and edit models (persisted in `settings`, same as
+  the desktop) but cannot add/delete/set-default keys.
 
 Resolved product-spec decisions recorded here:
 - `Idea.ID` (and all generated IDs) are **ULIDs**; custom personas get generated
@@ -304,6 +352,10 @@ Resolved product-spec decisions recorded here:
 - The OpenAI provider's API key is **mutable at runtime** (`SetAPIKey`, used by
   the desktop settings screen); access to it is synchronized (`sync.RWMutex`)
   so a key update cannot race an in-flight `Complete`.
+- The SSE endpoint (`/v1/ideas/{id}/evaluate/stream`) writes and flushes each
+  event as it occurs and sets `X-Accel-Buffering: no` so reverse proxies do not
+  buffer; clients must tolerate long-lived responses (a run lasts up to the
+  number of personas times the per-call timeout).
 
 ## 9. Testing strategy
 
@@ -313,8 +365,9 @@ Resolved product-spec decisions recorded here:
 | llm       | contract    | `httptest` fake server; 200/429/malformed |
 | registry  | integration | `:memory:` and temp-file SQLite; migrations idempotent (incl. v1→…→v6 upgrade path); cascade checks; `UpdatePersona` incl. built-in guard; `SaveRun`/`ListRuns` round-trip with `Spread`; settings get/set |
 | service   | unit        | fake `Store` + fake `Provider`            |
-| api       | integration | `httptest` against real handlers; error-code mapping |
+| api       | integration | `httptest` against real handlers; error-code mapping; idea-cards, provider list/update, and SSE stream (parse `text/event-stream` events) |
 | cli       | golden/exit | run command func with buffers; assert output + exit code |
+| webui     | unit        | `httptest` against the SPA handler: `GET /` and unknown non-`/v1` paths return the embedded `index.html` |
 | desktop   | unit        | bound methods against in-memory store + fake provider + fake `SecretStore`, mirroring CLI/API test style; `tsc --noEmit` must pass on `frontend/` |
 
 Each acceptance criterion in the product spec maps 1:1 to a test.
@@ -324,6 +377,8 @@ Each acceptance criterion in the product spec maps 1:1 to a test.
 `Makefile` targets:
 
 - `make build` — compile `cmd/aibreak` and `cmd/aibreakd`.
+- `make web-build` — build the SPA (`npm --prefix cmd/aibreak-desktop/frontend run build`) and copy `frontend/dist/*` into `internal/webui/dist/` so it is embedded.
+- `make build-web` — `web-build` then compile `cmd/aibreakd` with the SPA embedded.
 - `make test` — `go test ./...`.
 - `make lint` — `golangci-lint run`.
 - `make run-cli` / `make run-api` — dev run helpers.
@@ -332,6 +387,20 @@ Each acceptance criterion in the product spec maps 1:1 to a test.
 - `make desktop-build` — `wails build` run inside `cmd/aibreak-desktop` (native binary for the host OS).
 
 CI (optional, later): `go test ./...` + `golangci-lint` on PR.
+
+**Web service packaging (Docker / Coolify).** `Dockerfile` is multi-stage: a
+Node stage runs the frontend build and copies `dist` into `internal/webui/dist`;
+a Go stage (`CGO_ENABLED=0`) compiles `cmd/aibreakd` with the assets embedded;
+the final stage is a distroless non-root image exposing `8080`.
+`docker-compose.yaml` runs one `aibreak` service with a named volume mounted at
+`/data` (`AIBREAK_DB=/data/aibreak.db`), a `/healthz` healthcheck, and
+`restart: unless-stopped`; keys are injected as env/secrets. It is intended to
+be deployed by **Coolify** (Dockerfile/Compose build pack): Coolify provides the
+reverse proxy + TLS, the FQDN, env management, the persistent volume, and an
+optional HTTP basic-auth middleware. The service runs a **single replica**
+(SQLite is single-writer). `internal/webui` ships a committed placeholder
+`dist/index.html` so `go build ./...` (and `make test`) succeed on a fresh clone
+without Node.
 
 **Desktop packaging.** Wails cannot cross-compile (it links the platform
 webview + CGO), so releases build natively per OS: the release workflow gains

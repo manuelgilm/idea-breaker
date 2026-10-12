@@ -1,4 +1,6 @@
-const App = window.go.desktop.App;
+import { createClient, type Client } from "./client.js";
+
+const client: Client = createClient();
 
 type View = "ideas" | "detail" | "personas" | "provider";
 
@@ -213,7 +215,7 @@ async function loadCards(): Promise<void> {
   const grid = $("cards");
   clear(grid);
   try {
-    const cards = await App.ListIdeaCards();
+    const cards = await client.listIdeaCards();
     const query = inputValue("idea-search").trim().toLowerCase();
     const filtered = query === "" ? cards : cards.filter((c) => matchesCard(c, query));
     if (filtered.length === 0) {
@@ -284,7 +286,7 @@ async function createIdea(): Promise<void> {
     return;
   }
   try {
-    await App.CreateIdea(title, body, tags);
+    await client.createIdea(title, body, tags);
     $("create-panel").classList.add("hidden");
     (document.getElementById("new-title") as HTMLInputElement).value = "";
     (document.getElementById("new-body") as HTMLInputElement).value = "";
@@ -297,7 +299,7 @@ async function createIdea(): Promise<void> {
 
 async function deleteIdea(id: string, title: string): Promise<void> {
   try {
-    await App.DeleteIdea(id);
+    await client.deleteIdea(id);
     await loadCards();
   } catch (e) {
     showError(String(e));
@@ -387,7 +389,7 @@ async function renderDetail(main: HTMLElement): Promise<void> {
   $("fb-add").addEventListener("click", () => void addFeedback());
 
   try {
-    const idea = await App.GetIdea(state.ideaId);
+    const idea = await client.getIdea(state.ideaId);
     (document.getElementById("d-title") as HTMLInputElement).value = idea.title;
     (document.getElementById("d-body") as HTMLTextAreaElement).value = idea.body;
     (document.getElementById("d-tags") as HTMLInputElement).value = tagsText(idea.tags);
@@ -436,7 +438,7 @@ async function saveIdea(): Promise<void> {
     return;
   }
   try {
-    await App.UpdateIdea(state.ideaId, title, body, tags);
+    await client.updateIdea(state.ideaId, title, body, tags);
     await renderView();
   } catch (e) {
     showError(String(e));
@@ -445,7 +447,7 @@ async function saveIdea(): Promise<void> {
 
 async function deleteIdeaFromDetail(): Promise<void> {
   try {
-    await App.DeleteIdea(state.ideaId);
+    await client.deleteIdea(state.ideaId);
     state.ideaId = "";
     state.view = "ideas";
     await renderView();
@@ -456,7 +458,7 @@ async function deleteIdeaFromDetail(): Promise<void> {
 
 async function loadPersonas(): Promise<void> {
   try {
-    state.personas = await App.ListPersonas();
+    state.personas = await client.listPersonas();
   } catch (e) {
     showError(String(e));
     state.personas = [];
@@ -497,17 +499,17 @@ async function runEvaluate(): Promise<void> {
   const total = selected.length > 0 ? selected.length : state.personas.length;
 
   let received = 0;
-  const off = window.runtime.EventsOn("evaluation:persona", (result: PersonaResult) => {
+  const onPersona = (result: PersonaResult): void => {
     status.textContent = "";
     grid.appendChild(renderPersonaCard(result));
     received++;
     if (summarize && received >= total) {
       status.textContent = "Synthesizing…";
     }
-  });
+  };
 
   try {
-    const score = await App.Evaluate(state.ideaId, selected, summarize);
+    const score = await client.evaluate(state.ideaId, selected, summarize, onPersona);
     status.textContent = "";
     synthesis.appendChild(renderSynthesis(score));
     await Promise.all([renderHistory(), loadCardsIfVisible()]);
@@ -518,8 +520,6 @@ async function runEvaluate(): Promise<void> {
     if (info && !info.hasKey) {
       showError(`Evaluation failed: the active provider (${providerLabel(info.name)}) has no API key configured. Add one in the ${providerLabel(info.name)} settings.`);
     }
-  } finally {
-    off();
   }
 }
 
@@ -574,7 +574,7 @@ async function renderHistory(): Promise<void> {
   const list = $("history-list");
   clear(list);
   try {
-    const runs = await App.ListRuns(state.ideaId);
+    const runs = await client.listRuns(state.ideaId);
     if (runs.length === 0) {
       list.appendChild(el("li", "meta", "No evaluations yet."));
       return;
@@ -607,7 +607,7 @@ async function renderResources(): Promise<void> {
   const list = $("resources-list");
   clear(list);
   try {
-    const resources = await App.ListResources(state.ideaId);
+    const resources = await client.listResources(state.ideaId);
     if (resources.length === 0) {
       list.appendChild(el("div", "hint", "No resources yet."));
       return;
@@ -640,7 +640,7 @@ async function addResource(): Promise<void> {
     return;
   }
   try {
-    await App.AddResource(state.ideaId, url, title, kind, note);
+    await client.addResource(state.ideaId, url, title, kind, note);
     (document.getElementById("res-url") as HTMLInputElement).value = "";
     (document.getElementById("res-title") as HTMLInputElement).value = "";
     (document.getElementById("res-note") as HTMLInputElement).value = "";
@@ -652,7 +652,7 @@ async function addResource(): Promise<void> {
 
 async function removeResource(id: string): Promise<void> {
   try {
-    await App.DeleteResource(id);
+    await client.deleteResource(state.ideaId, id);
     await renderResources();
   } catch (e) {
     showError(String(e));
@@ -663,7 +663,7 @@ async function renderFeedback(): Promise<void> {
   const list = $("feedback-list");
   clear(list);
   try {
-    const all = await App.ListFeedback(state.ideaId);
+    const all = await client.listFeedback(state.ideaId);
     if (all.length === 0) {
       list.appendChild(el("li", "meta", "No feedback yet."));
       return;
@@ -685,7 +685,7 @@ async function renderFeedback(): Promise<void> {
 
 async function deleteFeedback(id: string): Promise<void> {
   try {
-    await App.DeleteFeedback(id);
+    await client.deleteFeedback(state.ideaId, id);
     await renderFeedback();
   } catch (e) {
     showError(String(e));
@@ -702,7 +702,7 @@ async function addFeedback(): Promise<void> {
     return;
   }
   try {
-    await App.AddFeedback(state.ideaId, author, score, rationale, aspect);
+    await client.addFeedback(state.ideaId, author, score, rationale, aspect);
     (document.getElementById("fb-author") as HTMLInputElement).value = "";
     (document.getElementById("fb-score") as HTMLInputElement).value = "";
     (document.getElementById("fb-rationale") as HTMLInputElement).value = "";
@@ -808,7 +808,7 @@ async function savePersona(): Promise<void> {
     return;
   }
   try {
-    await App.UpdatePersona(target.id, name, prompt, weight);
+    await client.updatePersona(target.id, name, prompt, weight);
     cancelEditPersona();
     await loadPersonas();
     renderPersonasList();
@@ -826,7 +826,7 @@ async function createPersona(): Promise<void> {
     return;
   }
   try {
-    await App.CreatePersona(name, prompt, weight);
+    await client.createPersona(name, prompt, weight);
     (document.getElementById("p-name") as HTMLInputElement).value = "";
     (document.getElementById("p-prompt") as HTMLInputElement).value = "";
     await loadPersonas();
@@ -838,7 +838,7 @@ async function createPersona(): Promise<void> {
 
 async function deletePersona(id: string): Promise<void> {
   try {
-    await App.DeletePersona(id);
+    await client.deletePersona(id);
     await loadPersonas();
     renderPersonasList();
   } catch (e) {
@@ -862,7 +862,7 @@ const MODEL_SUGGESTIONS: Record<string, string[]> = {
 // per provider (the active one highlighted).
 async function loadProviderNav(): Promise<void> {
   try {
-    providerInfos = await App.GetProviders();
+    providerInfos = await client.getProviders();
     for (const info of providerInfos) {
       if (info.active) activeProvider = info.name;
     }
@@ -889,7 +889,7 @@ function providerLabel(name: string): string {
 
 async function selectProvider(name: string): Promise<void> {
   try {
-    await App.SetActiveProvider(name);
+    await client.setActiveProvider(name);
     activeProvider = name;
     showSuccess(`Switched to ${name}.`);
     state.view = "provider";
@@ -916,24 +916,11 @@ async function renderProvider(main: HTMLElement): Promise<void> {
       <div class="row">
         <button id="model-save" class="primary">Save model</button>
       </div>
-    </div>
-    <div class="panel">
-      <h3 id="keys-title">API keys</h3>
-      <ul id="keys-list" class="list"></ul>
-      <div class="row" style="margin-top: 10px;">
-        <input id="key-label" type="text" placeholder="label (optional)" style="flex:1;" />
-        <input id="key-value" type="password" placeholder="sk-…" style="flex:1;" />
-      </div>
-      <div class="row" style="margin-top: 8px;">
-        <button id="key-add" class="primary">Add key</button>
-      </div>
-      <div class="hint" style="margin-top:6px;">Keys are stored in your OS keyring; only a masked suffix is shown.</div>
+      <div class="hint" id="key-status" style="margin-top: 8px;"></div>
     </div>
   `;
-  $("key-add").addEventListener("click", () => void addAPIKey());
   $("model-save").addEventListener("click", () => void saveModel());
   updateProviderStatus();
-  await renderKeys();
 }
 
 function activeModel(): string {
@@ -959,7 +946,13 @@ function updateProviderStatus(): void {
     }
   }
 
-  $("keys-title").textContent = `API keys — ${providerLabel(activeProvider)}`;
+  const status = document.getElementById("key-status");
+  if (status) {
+    const info = activeProviderInfo();
+    status.textContent = info?.hasKey
+      ? "API key configured."
+      : "No API key configured. Set OPENAI_API_KEY / GEMINI_API_KEY in the deployment environment and restart.";
+  }
 }
 
 async function saveModel(): Promise<void> {
@@ -969,84 +962,10 @@ async function saveModel(): Promise<void> {
     return;
   }
   try {
-    await App.SaveModel(activeProvider, model);
+    await client.saveModel(activeProvider, model);
     showSuccess("Model saved.");
     await loadProviderNav();
     updateProviderStatus();
-  } catch (e) {
-    showError(String(e));
-  }
-}
-
-async function renderKeys(): Promise<void> {
-  const list = $("keys-list");
-  clear(list);
-  try {
-    const keys = await App.ListAPIKeys(activeProvider);
-    if (keys.length === 0) {
-      list.appendChild(el("li", "meta", "No API keys registered."));
-      return;
-    }
-    for (const k of keys) {
-      const li = el("li");
-      const head = el("div");
-      head.appendChild(el("span", undefined, k.label || "Unnamed"));
-      head.appendChild(el("span", "meta", ` ${k.hint}`));
-      if (k.is_default) {
-        head.appendChild(el("span", "badge builtin", "default"));
-      }
-      li.appendChild(head);
-      const row = el("div", "row");
-      row.style.marginTop = "6px";
-      if (!k.is_default) {
-        const setDef = el("button", "small", "Set default");
-        setDef.addEventListener("click", () => void setDefaultAPIKey(k.id));
-        row.appendChild(setDef);
-      }
-      const del = el("button", "small danger", "Delete");
-      del.addEventListener("click", () => void deleteAPIKey(k.id));
-      row.appendChild(del);
-      li.appendChild(row);
-      list.appendChild(li);
-    }
-  } catch (e) {
-    showError(String(e));
-  }
-}
-
-async function addAPIKey(): Promise<void> {
-  const label = inputValue("key-label").trim();
-  const key = inputValue("key-value").trim();
-  if (!key) {
-    showError("Enter an API key first.");
-    return;
-  }
-  try {
-    await App.AddAPIKey(activeProvider, label, key);
-    (document.getElementById("key-label") as HTMLInputElement).value = "";
-    (document.getElementById("key-value") as HTMLInputElement).value = "";
-    showSuccess("API key added.");
-    await renderKeys();
-  } catch (e) {
-    showError(String(e));
-  }
-}
-
-async function deleteAPIKey(id: string): Promise<void> {
-  try {
-    await App.DeleteAPIKey(id);
-    showSuccess("API key deleted.");
-    await renderKeys();
-  } catch (e) {
-    showError(String(e));
-  }
-}
-
-async function setDefaultAPIKey(id: string): Promise<void> {
-  try {
-    await App.SetDefaultAPIKey(id);
-    showSuccess("Default key updated.");
-    await renderKeys();
   } catch (e) {
     showError(String(e));
   }

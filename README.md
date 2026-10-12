@@ -1,6 +1,6 @@
 # aibreak
 
-AI-powered idea evaluation engine — a CLI (`aibreak`), an HTTP API
+AI-powered idea evaluation engine — a CLI (`aibreak`), an HTTP API + web UI
 (`aibreakd`), and a desktop app (`aibreak-desktop`) that critique an idea from
 multiple AI personas, score it on a 0–5 scale, and aggregate those into a single
 feasibility score (0–100).
@@ -170,10 +170,12 @@ aibreakd   # listens on 127.0.0.1:8080 by default
 |--------|-----------------------------------|------------------------|
 | POST   | `/v1/ideas`                       | Create an idea         |
 | GET    | `/v1/ideas` (`?tag=`)             | List ideas             |
+| GET    | `/v1/ideas/cards`                 | List ideas with latest score |
 | GET    | `/v1/ideas/{id}`                  | Get an idea            |
 | PATCH  | `/v1/ideas/{id}`                  | Update an idea         |
 | DELETE | `/v1/ideas/{id}`                  | Delete an idea         |
 | POST   | `/v1/ideas/{id}/evaluate`         | Evaluate an idea (body `{"summary": true}` to synthesize a verdict) |
+| POST   | `/v1/ideas/{id}/evaluate/stream`  | Evaluate, streaming persona progress as SSE (`text/event-stream`) |
 | GET    | `/v1/ideas/{id}/evaluations`      | Evaluation history     |
 | POST   | `/v1/ideas/{id}/feedback`         | Add feedback           |
 | GET    | `/v1/ideas/{id}/feedback`         | List feedback          |
@@ -185,6 +187,9 @@ aibreakd   # listens on 127.0.0.1:8080 by default
 | POST   | `/v1/personas`                    | Create a persona       |
 | PATCH  | `/v1/personas/{id}`               | Update a custom persona (version auto-increments) |
 | DELETE | `/v1/personas/{id}`               | Delete a persona       |
+| GET    | `/v1/providers`                   | List LLM providers (active, model, key status) |
+| PUT    | `/v1/providers/{name}`            | Set the active provider and/or its model |
+| GET    | `/healthz`                        | Liveness probe         |
 
 Evaluate responses include `spread` (persona disagreement: `consensus` 0–1,
 `mixed` 2–3, `divided` 4–5), plus `summary` and `verdict` when synthesis was
@@ -204,6 +209,55 @@ curl -s -X POST http://127.0.0.1:8080/v1/ideas -d '{"title":"My idea"}'
 curl -s -X POST http://127.0.0.1:8080/v1/ideas/<id>/evaluate -d '{}'
 curl -s -X POST http://127.0.0.1:8080/v1/ideas/<id>/evaluate -d '{"summary": true}'
 ```
+
+## Web service (Docker / Coolify)
+
+`aibreakd` can also serve the web UI: the SPA is embedded in the binary and
+served at `/`, with the JSON API under `/v1/`. This is a **private,
+single-user** deployment (no authentication of its own) — gate it at your
+reverse proxy if it is internet-reachable.
+
+Provider API keys come from the environment (there is no OS keyring on a
+server): set `OPENAI_API_KEY` and/or `GEMINI_API_KEY`. The provider screen lets
+you switch the active provider and edit the model, but keys are read-only.
+
+Build and run with Docker:
+
+```sh
+docker build -t aibreak .
+docker run -p 8080:8080 -v aibreak-data:/data \
+  -e OPENAI_API_KEY=sk-... aibreak
+# open http://localhost:8080
+```
+
+Or with Compose (`docker-compose.yaml`):
+
+```sh
+cp .env.example .env   # then set OPENAI_API_KEY / GEMINI_API_KEY
+docker compose up --build
+```
+
+To build the SPA into a local `aibreakd` binary without Docker:
+
+```sh
+make build-web         # builds the SPA, embeds it, compiles ./cmd/aibreakd
+```
+
+### Deploy with Coolify
+
+1. Add the Git repository as a new resource (Coolify can clone it).
+2. Choose the **Dockerfile** build pack (the `Dockerfile` at the repo root).
+3. Set the exposed port to **8080** and assign an FQDN — Coolify provisions TLS
+   automatically.
+4. Add the environment variables: `OPENAI_API_KEY`, `GEMINI_API_KEY`, and
+   optionally `AIBREAK_LLM_PROVIDER` / `AIBREAK_LLM_MODEL` / `AIBREAK_GEMINI_MODEL`.
+5. Add a persistent volume mounted at **`/data`** (`AIBREAK_DB` defaults to
+   `/data/aibreak.db`).
+6. Optionally attach an HTTP basic-auth middleware for access control.
+7. Keep it at **one replica** — SQLite is single-writer.
+
+Alternatively, deploy it as a **Docker Compose** resource and point Coolify at
+`docker-compose.yaml`.
 
 ## Development
 

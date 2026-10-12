@@ -1,11 +1,9 @@
-// Ambient declarations for the Wails-bound Go API.
+// Ambient type declarations for the UI.
 //
-// At `wails dev` / `wails build` time, Wails injects `window.go` at runtime.
-// These declarations let `tsc` type-check the frontend without the generated
-// `frontend/wailsjs` output (which is gitignored and regenerated on build).
-//
-// The bound struct is *desktop.App (package `internal/desktop`), so the
-// namespace is `desktop` and bound methods do not expose context.Context.
+// The DTOs below mirror the Go JSON tags shared by the Wails bindings and the
+// HTTP API. The Wails `window.go` / `window.runtime` globals are injected by
+// Wails at `wails dev` / `wails build` time and are only present in the desktop
+// binary; `client.ts` falls back to the HTTP transport when they are absent.
 
 interface Idea {
   id: string;
@@ -23,7 +21,7 @@ interface IdeaCard {
   tags: string[];
   created: string;
   updated: string;
-  score?: number;
+  score?: number | null;
 }
 
 interface Evaluation {
@@ -89,15 +87,6 @@ interface ProviderInfo {
   hasKey: boolean;
 }
 
-interface APIKey {
-  id: string;
-  provider: string;
-  label: string;
-  hint: string;
-  is_default: boolean;
-  created: string;
-}
-
 interface PersonaResult {
   name: string;
   status: string;
@@ -111,7 +100,6 @@ interface Window {
     desktop: {
       App: {
         // ideas
-        ListIdeas(tag: string): Promise<Idea[]>;
         ListIdeaCards(): Promise<IdeaCard[]>;
         GetIdea(id: string): Promise<Idea>;
         CreateIdea(title: string, body: string, tags: string[]): Promise<Idea>;
@@ -137,15 +125,11 @@ interface Window {
         GetProviders(): Promise<ProviderInfo[]>;
         SetActiveProvider(name: string): Promise<void>;
         SaveModel(provider: string, model: string): Promise<void>;
-        ListAPIKeys(provider: string): Promise<APIKey[]>;
-        AddAPIKey(provider: string, label: string, key: string): Promise<APIKey>;
-        DeleteAPIKey(id: string): Promise<void>;
-        SetDefaultAPIKey(id: string): Promise<void>;
       };
     };
   };
   runtime: {
     EventsOn(eventName: string, callback: (...data: any[]) => void): () => void;
-    EventsOff(eventName: string, ...additionalEventNames: string[]): void;
+    EventsOff(eventName: string, additionalEventNames?: string[]): void;
   };
 }

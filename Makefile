@@ -1,7 +1,17 @@
-.PHONY: build test lint run-cli run-api desktop-dev desktop-build fmt tidy
+.PHONY: build build-web test lint run-cli run-api web-build desktop-dev desktop-build fmt tidy
 
 build:
 	go build ./cmd/aibreak ./cmd/aibreakd
+
+# Build the SPA and copy it where aibreakd embeds it (internal/webui/dist).
+web-build:
+	npm --prefix cmd/aibreak-desktop/frontend install
+	npm --prefix cmd/aibreak-desktop/frontend run build
+	cp -r cmd/aibreak-desktop/frontend/dist/. internal/webui/dist/
+
+# Compile aibreakd with the SPA embedded.
+build-web: web-build
+	go build ./cmd/aibreakd
 
 test:
 	go test ./...

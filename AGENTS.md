@@ -27,7 +27,7 @@ resolve it by editing the spec, not by guessing in code.
 ## Conventions
 
 - Go 1.22+, module path `aibreak`.
-- Layout: `cmd/aibreak`, `cmd/aibreakd`, `internal/{domain,engine,service,llm,registry,cli,api,config}`.
+- Layout: `cmd/aibreak`, `cmd/aibreakd`, `internal/{domain,engine,service,llm,registry,cli,api,webui,config}`.
 - Dependency rule: depend inward only. `internal/engine` is pure (no I/O).
 - All external I/O behind interfaces (`llm.Provider`, `registry.Store`).
 - Structured logging via `log/slog`. Honors `context.Context` everywhere.

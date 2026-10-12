@@ -1,16 +1,20 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"aibreak/internal/api"
 	"aibreak/internal/app"
 	"aibreak/internal/config"
+	"aibreak/internal/webui"
 )
 
 func main() {
@@ -26,18 +30,35 @@ func main() {
 		logger.Warn("binding to a non-loopback address exposes the unauthenticated API", "addr", cfg.Addr)
 	}
 
-	svc, _, store, err := app.Build(cfg)
+	svc, router, store, err := app.BuildDesktop(cfg)
 	if err != nil {
 		logger.Error("build", "err", err)
 		os.Exit(1)
 	}
 	defer store.Close()
 
+	if err := app.ApplySettings(context.Background(), svc, router); err != nil {
+		logger.Warn("apply settings", "err", err)
+	}
+
 	server := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           api.New(svc).Handler(),
+		Addr: cfg.Addr,
+		Handler: webui.Handler(api.New(svc, api.WithProviderRouter(router), api.WithFallbackKeys(map[string]string{
+			"openai": cfg.APIKey,
+			"gemini": cfg.GeminiAPIKey,
+		})).Handler()),
 		ReadHeaderTimeout: 10 * time.Second,
 	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
 
 	logger.Info("listening", "addr", cfg.Addr)
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
